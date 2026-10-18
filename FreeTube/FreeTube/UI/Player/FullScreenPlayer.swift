@@ -59,91 +59,43 @@ struct FullScreenPlayer: View {
         // comments, queue. Removing per-section backgrounds and using one full-screen material lets
         // the popup read as one continuous translucent surface instead of three stacked tones.
         //
-        // **Why the outer `GeometryReader`:** we want the video to always be full-width
+        // **Why the outer `GeometryReader`:** we want the video to fill its column edge to edge
         // regardless of how wide vs tall the popup is. `.aspectRatio(16/9, .fit)` clamps the
         // video to whichever dimension is tighter — on iPhone portrait that's always width
         // (the screen is much taller than 16:9), but on Mac (Designed-for-iPad) and iPad
         // landscape the window is wider than 16:9 so `.fit` height-clamps and the video sits
-        // letterboxed inside black side bars. Reading the available width via
-        // `GeometryReader` and sizing the ZStack to `proxy.size.width × width*9/16`
-        // explicitly removes the clamp — full-width on every idiom.
+        // letterboxed inside black side bars. Reading the available size via `GeometryReader`
+        // and sizing the ZStack to `width × width*9/16` explicitly removes the clamp.
+        //
+        // The same proxy picks the arrangement: video stacked above the panel (full width) in
+        // portrait-shaped windows, video column beside the panel in wide landscape ones — see
+        // `usesSideBySideLayout(for:)`.
         GeometryReader { proxy in
-            VStack(spacing: 0) {
-                // Pinning the ZStack to width × width*9/16 keeps the surface a stable height
-                // across .resolving → .downloading → .readyToPlay (the underlying
-                // AVPlayerViewController has zero intrinsic size while loading; the explicit
-                // frame here is what stops the layout from jumping when the user taps a queue
-                // item).
-                ZStack {
-                    Color.black
-                    PlayerSurface(player: player.player)
-                    DownloadProgressOverlay(state: player.loadState)
-                }
-                .frame(width: proxy.size.width, height: proxy.size.width * 9 / 16)
-            // Pull-down-to-dismiss starting from the video surface.
-            //
-            // `AVPlayerViewController`'s internal `UIPanGestureRecognizer`s (scrubber, system
-            // controls) consume touches before they can reach LNPopupUI's outer pan, so the
-            // library's `.popupInteractionStyle(.drag)` only works when the gesture starts on
-            // SwiftUI views below the video (comments / queue). `.simultaneousGesture` is the
-            // escape hatch: SwiftUI composes this `DragGesture` with the UIKit recognizers
-            // underneath instead of arbitrating between them, so AVPlayerViewController's
-            // controls keep working AND we can detect a downward pull and dismiss the popup
-            // imperatively. LNPopupUI animates the collapse — we just flip the binding.
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 30, coordinateSpace: .global)
-                    .onEnded { value in
-                        let mostlyDown = value.translation.height > 90
-                            && abs(value.translation.width) < value.translation.height
-                        let fastFlick = value.predictedEndTranslation.height > 180
-                        if mostlyDown || fastFlick {
-                            @Bindable var p = player
-                            p.fullScreenPresented = false
-                        }
-                    }
-            )
+            let sideBySide = Self.usesSideBySideLayout(for: proxy.size)
+            let videoWidth = sideBySide ? Self.sideBySideVideoWidth(for: proxy.size) : proxy.size.width
+            // `AnyLayout` rather than an `if`/`else` so rotating between the stacked and
+            // side-by-side arrangements keeps view identity: the `AVPlayerViewController`
+            // behind `PlayerSurface` isn't torn down mid-playback, and the comments / queue
+            // panel keeps its scroll position.
+            let layout = sideBySide
+                ? AnyLayout(HStackLayout(alignment: .top, spacing: 0))
+                : AnyLayout(VStackLayout(spacing: 0))
 
-            transportRow
-                .padding(.vertical, 10)
+            layout {
+                VStack(spacing: 0) {
+                    videoSurface(width: videoWidth)
 
-            Divider()
+                    transportRow
+                        .padding(.vertical, 10)
+                }
+                .frame(width: videoWidth)
 
-            if let video = player.currentVideo {
-                // **Two render modes for the lower section, picked by `pushedChannel`:**
-                //
-                // 1. **Panel mode (default, channel == nil):** plain ScrollView, NO
-                //    NavigationStack. The outer VStack's `.background { thinMaterial }` paints
-                //    behind it directly — exactly the same backdrop the transport row above
-                //    shows. This is what makes the visual treatment consistent.
-                //
-                // 2. **Channel-pushed mode (channel != nil):** NavigationStack rooted at
-                //    `ChannelScreen`, with its own thinMaterial inside since the stack's UIKit
-                //    container paints opaque. Channel's own internal NavigationLinks (to
-                //    ChannelTabScreen / PlaylistScreen) push further into this stack.
-                //
-                // The previous version kept the NavigationStack mounted in both modes — that
-                // forced us to paint an inner thinMaterial under the comments/queue panel,
-                // which stacked on top of the stack's opaque container and read noticeably
-                // darker than the transport row. Mounting the stack only when needed fixes it.
-                Group {
-                    if let channel = pushedChannel {
-                        channelStack(channel)
-                    } else {
-                        panel(video)
-                    }
-                }
-                // Reset description state, (best-effort) prefetch the snippet, AND pop any
-                // pushed channel screen whenever the user picks a new video — otherwise tapping
-                // the next video in the queue would leave a stale channel push on screen.
-                .onChange(of: video.id, initial: true) { _, _ in
-                    details = nil
-                    isDetailsExpanded = false
-                    pushedChannel = nil
-                    channelPath = NavigationPath()
-                    prefetchDescriptionIfAvailable(for: video)
-                }
+                // Horizontal rule under the transport row when stacked; vertical rule between
+                // the two columns when side by side.
+                Divider()
+
+                lowerSection
             }
-        }
         // One continuous material under EVERYTHING, including the top safe-area inset (status bar).
         // VStack content still respects safe area; only the material extends behind the inset.
         .background {
@@ -199,6 +151,110 @@ struct FullScreenPlayer: View {
             .padding(.bottom, 8)
         }
         }
+    }
+
+    // MARK: - Layout pieces
+
+    /// Video surface pinned to `width × width*9/16`.
+    @ViewBuilder
+    private func videoSurface(width: CGFloat) -> some View {
+        ZStack {
+            Color.black
+            PlayerSurface(player: player.player)
+            DownloadProgressOverlay(state: player.loadState)
+        }
+        .frame(width: width, height: width * 9 / 16)
+        // Pull-down-to-dismiss starting from the video surface.
+        //
+        // `AVPlayerViewController`'s internal `UIPanGestureRecognizer`s (scrubber, system
+        // controls) consume touches before they can reach LNPopupUI's outer pan, so the
+        // library's `.popupInteractionStyle(.drag)` only works when the gesture starts on
+        // SwiftUI views below the video (comments / queue). `.simultaneousGesture` is the
+        // escape hatch: SwiftUI composes this `DragGesture` with the UIKit recognizers
+        // underneath instead of arbitrating between them, so AVPlayerViewController's
+        // controls keep working AND we can detect a downward pull and dismiss the popup
+        // imperatively. LNPopupUI animates the collapse — we just flip the binding.
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 30, coordinateSpace: .global)
+                .onEnded { value in
+                    let mostlyDown = value.translation.height > 90
+                        && abs(value.translation.width) < value.translation.height
+                    let fastFlick = value.predictedEndTranslation.height > 180
+                    if mostlyDown || fastFlick {
+                        @Bindable var p = player
+                        p.fullScreenPresented = false
+                    }
+                }
+        )
+    }
+
+    /// Metadata + comments / queue panel, or the pushed channel stack.
+    @ViewBuilder
+    private var lowerSection: some View {
+        if let video = player.currentVideo {
+            // **Two render modes for the lower section, picked by `pushedChannel`:**
+            //
+            // 1. **Panel mode (default, channel == nil):** plain ScrollView, NO
+            //    NavigationStack. The outer VStack's `.background { thinMaterial }` paints
+            //    behind it directly — exactly the same backdrop the transport row above
+            //    shows. This is what makes the visual treatment consistent.
+            //
+            // 2. **Channel-pushed mode (channel != nil):** NavigationStack rooted at
+            //    `ChannelScreen`, with its own thinMaterial inside since the stack's UIKit
+            //    container paints opaque. Channel's own internal NavigationLinks (to
+            //    ChannelTabScreen / PlaylistScreen) push further into this stack.
+            //
+            // The previous version kept the NavigationStack mounted in both modes — that
+            // forced us to paint an inner thinMaterial under the comments/queue panel,
+            // which stacked on top of the stack's opaque container and read noticeably
+            // darker than the transport row. Mounting the stack only when needed fixes it.
+            Group {
+                if let channel = pushedChannel {
+                    channelStack(channel)
+                } else {
+                    panel(video)
+                }
+            }
+            // Reset description state, (best-effort) prefetch the snippet, AND pop any
+            // pushed channel screen whenever the user picks a new video — otherwise tapping
+            // the next video in the queue would leave a stale channel push on screen.
+            .onChange(of: video.id, initial: true) { _, _ in
+                details = nil
+                isDetailsExpanded = false
+                pushedChannel = nil
+                channelPath = NavigationPath()
+                prefetchDescriptionIfAvailable(for: video)
+            }
+        }
+    }
+
+    // MARK: - Side-by-side layout (iPad landscape, Mac, iPhone landscape)
+
+    /// Minimum popup width before the video and the panel go side by side. Narrower windows
+    /// (iPhone portrait, iPad portrait, narrow Split View / Slide Over) keep the stacked layout.
+    private static let sideBySideMinWidth: CGFloat = 700
+    /// Share of the popup width the video column takes in side-by-side mode.
+    private static let sideBySideVideoFraction: CGFloat = 0.6
+    /// Transport row height plus its vertical padding (48pt play button + 2 × 10pt), kept free
+    /// under the video when capping the video column to the available height.
+    private static let transportReserveHeight: CGFloat = 72
+
+    /// Side by side when the popup is landscape-shaped and wide enough for two usable columns.
+    /// Stacked, a full-width video in a landscape window is `width × 9/16` tall: on an iPad that
+    /// leaves only a sliver for comments / queue, and on an iPhone it overflows the screen.
+    private static func usesSideBySideLayout(for size: CGSize) -> Bool {
+        size.width > size.height && size.width >= sideBySideMinWidth
+    }
+
+    /// Video column width: a fixed share of the popup, capped so the 16:9 surface, the
+    /// transport row and the bottom Close button (whose `.safeAreaInset` sits inside the
+    /// `GeometryReader`, so `size` still includes it) fit the height of short windows
+    /// (Stage Manager, Mac).
+    private static func sideBySideVideoWidth(for size: CGSize) -> CGFloat {
+        let byWidth = size.width * sideBySideVideoFraction
+        let available = size.height - transportReserveHeight - closeButtonReserveHeight
+        let byHeight = max(0, available) * 16 / 9
+        return min(byWidth, byHeight)
     }
 
     // MARK: - Close button
