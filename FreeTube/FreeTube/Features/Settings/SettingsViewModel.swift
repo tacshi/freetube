@@ -22,6 +22,11 @@ final class SettingsViewModel {
         set { preferences.autoplayNext = newValue }
     }
 
+    var syncWatchProgress: Bool {
+        get { preferences.syncWatchProgress }
+        set { preferences.syncWatchProgress = newValue }
+    }
+
     // MARK: - Diagnostics
 
     /// Two-way binding for the "Save logs to file" toggle. Routes through

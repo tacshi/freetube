@@ -53,6 +53,9 @@ struct FullScreenPlayer: View {
     @State private var pictureInPicture = PictureInPictureModel()
     /// Full-screen mode: the video fills the player window and everything else hides.
     @State private var isVideoFullScreen = false
+    /// Theater mode (wide windows only): the video spans the full player width; info / comments
+    /// and Up next move into two columns below it. Remembered across launches, like YouTube.
+    @AppStorage("playerTheaterMode") private var theaterMode = false
 
     /// Hashable wrapper so `.navigationDestination(for:)` can match the channel id and push
     /// `ChannelScreen` onto `channelPath`.
@@ -80,40 +83,48 @@ struct FullScreenPlayer: View {
         // `usesSideBySideLayout(for:)`.
         GeometryReader { proxy in
             let sideBySide = Self.usesSideBySideLayout(for: proxy.size)
+            let theater = sideBySide && theaterMode && !isVideoFullScreen
             let videoSize = videoSize(in: proxy.size, sideBySide: sideBySide)
-            // `AnyLayout` rather than an `if`/`else` so rotating between the stacked and
-            // side-by-side arrangements keeps view identity: the video layer (and its PiP
-            // controller) isn't torn down mid-playback, and the comments / queue panel keeps its
-            // scroll position.
-            let layout = sideBySide
-                ? AnyLayout(HStackLayout(alignment: .top, spacing: 0))
-                : AnyLayout(VStackLayout(spacing: 0))
+            Group {
+                if theater {
+                    theaterLayout(in: proxy.size)
+                } else {
+                    // `AnyLayout` rather than an `if`/`else` so rotating between the stacked and
+                    // side-by-side arrangements keeps view identity: the video layer (and its PiP
+                    // controller) isn't torn down mid-playback, and the comments / queue panel
+                    // keeps its scroll position. (Toggling theater mode does rebuild the video
+                    // layer; playback continues on the same `AVPlayer`.)
+                    let layout = sideBySide
+                        ? AnyLayout(HStackLayout(alignment: .top, spacing: 0))
+                        : AnyLayout(VStackLayout(spacing: 0))
 
-            layout {
-                VStack(spacing: 0) {
-                    videoSurface(size: videoSize)
+                    layout {
+                        VStack(spacing: 0) {
+                            videoSurface(size: videoSize, allowsTheater: sideBySide && !isVideoFullScreen)
 
-                    if !isVideoFullScreen {
-                        transportRow(showsPanelToggle: !sideBySide)
-                            .padding(.vertical, 10)
+                            if !isVideoFullScreen {
+                                transportRow(showsPanelToggle: !sideBySide)
+                                    .padding(.vertical, 10)
 
-                        // Side by side, the space under the video holds the video's info and
-                        // comments (like YouTube's iPad layout); the right column is Up next.
-                        if sideBySide, let video = player.currentVideo {
+                                // Side by side, the space under the video holds the video's info and
+                                // comments (like YouTube's iPad layout); the right column is Up next.
+                                if sideBySide, let video = player.currentVideo {
+                                    Divider()
+                                    infoAndComments(video)
+                                }
+                            }
+                        }
+                        .padding(.top, isVideoFullScreen ? 0 : windowControlsInset)
+                        .frame(width: videoSize.width)
+
+                        if !isVideoFullScreen {
+                            // Horizontal rule under the transport row when stacked; vertical rule
+                            // between the two columns when side by side.
                             Divider()
-                            infoAndComments(video)
+
+                            lowerSection(sideBySide: sideBySide)
                         }
                     }
-                }
-                .padding(.top, isVideoFullScreen ? 0 : windowControlsInset)
-                .frame(width: videoSize.width)
-
-                if !isVideoFullScreen {
-                    // Horizontal rule under the transport row when stacked; vertical rule
-                    // between the two columns when side by side.
-                    Divider()
-
-                    lowerSection(sideBySide: sideBySide)
                 }
             }
             // Measured on the whole player (whose frame doesn't move with the padding above),
@@ -169,19 +180,52 @@ struct FullScreenPlayer: View {
 
     /// Video layer with the player's own controls on top (`PlayerControlsOverlay`). 16:9 in the
     /// normal layouts; in full-screen mode it fills the player and the picture letterboxes.
-    private func videoSurface(size: CGSize) -> some View {
+    /// `allowsTheater`: show the theater-mode toggle (wide windows, not full screen).
+    private func videoSurface(size: CGSize, allowsTheater: Bool) -> some View {
         ZStack {
             Color.black
             VideoSurface(player: player.player, pictureInPicture: pictureInPicture)
             PlaybackStatusOverlay(state: player.loadState)
             PlayerControlsOverlay(
                 isFullScreen: $isVideoFullScreen,
+                theaterMode: allowsTheater ? $theaterMode : nil,
                 pictureInPicture: pictureInPicture,
                 topInset: isVideoFullScreen ? windowControlsInset : 0,
                 onClose: closePlayer
             )
         }
         .frame(width: size.width, height: size.height)
+    }
+
+    /// Theater mode: video across the full width at 16:9, then the action row + info / comments on
+    /// the left and Up next on the right. Only if a full-width video would leave less than
+    /// `theaterMinPanelHeight` for the panels does it shrink (and the picture letterbox).
+    @ViewBuilder
+    private func theaterLayout(in size: CGSize) -> some View {
+        let available = size.height - windowControlsInset
+        let videoHeight = max(0, min(size.width * 9 / 16, available - Self.theaterMinPanelHeight))
+        VStack(spacing: 0) {
+            videoSurface(size: CGSize(width: size.width, height: videoHeight), allowsTheater: true)
+
+            Divider()
+
+            HStack(alignment: .top, spacing: 0) {
+                VStack(spacing: 0) {
+                    transportRow(showsPanelToggle: false)
+                        .padding(.vertical, 10)
+                    if let video = player.currentVideo {
+                        Divider()
+                        infoAndComments(video)
+                    }
+                }
+                .frame(width: size.width * Self.sideBySideVideoFraction)
+
+                Divider()
+
+                lowerSection(sideBySide: true)
+            }
+        }
+        .padding(.top, windowControlsInset)
     }
 
     private func videoSize(in container: CGSize, sideBySide: Bool) -> CGSize {
@@ -240,6 +284,8 @@ struct FullScreenPlayer: View {
     private static let sideBySideMinWidth: CGFloat = 700
     /// Share of the popup width the video column takes in side-by-side mode.
     private static let sideBySideVideoFraction: CGFloat = 0.6
+    /// Height kept for the action row and panels under the theater-mode video.
+    private static let theaterMinPanelHeight: CGFloat = 140
     /// Transport row height plus its vertical padding (36pt buttons / chips + 2 × 10pt), kept
     /// free under the video when capping the video column to the available height.
     private static let transportReserveHeight: CGFloat = 56

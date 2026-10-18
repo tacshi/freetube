@@ -55,18 +55,19 @@ actor PersistenceWriter {
         guard let entry = try? modelContext.fetch(descriptor).first else { return }
         entry.lastPosition = position
         if duration > 0 { entry.duration = duration }
+        entry.positionSavedAt = .now
         try? modelContext.save()
     }
 
-    /// Where to resume `videoID`, or nil to start from the beginning: never played, stopped in
-    /// the first few seconds, or watched to (nearly) the end — like YouTube, a finished video
-    /// starts over.
-    func resumePosition(videoID: String) -> TimeInterval? {
+    /// The app's own saved position for `videoID`, if it has played it.
+    func savedPlayback(videoID: String) -> SavedPlayback? {
         let target = videoID
         let descriptor = FetchDescriptor<WatchHistoryEntry>(predicate: #Predicate { $0.videoID == target })
-        guard let entry = try? modelContext.fetch(descriptor).first,
-              entry.lastPosition >= 5 else { return nil }
-        if entry.duration > 0, entry.lastPosition >= entry.duration - 10 { return nil }
-        return entry.lastPosition
+        guard let entry = try? modelContext.fetch(descriptor).first, entry.lastPosition > 0 else { return nil }
+        return SavedPlayback(
+            position: entry.lastPosition,
+            duration: entry.duration > 0 ? entry.duration : nil,
+            savedAt: entry.positionSavedAt
+        )
     }
 }

@@ -21,6 +21,11 @@ enum Mappers {
         // CDN URL keyed by videoId guarantees a working image — `hqdefault.jpg` is always served
         // by YouTube for every public video, including Shorts.
         let thumb = bestThumbnailURL(yt.thumbnails) ?? canonicalThumbnailURL(for: yt.videoId)
+        // Signed-in feeds report how far the account got into each video; remember it so playback
+        // can resume there (see `YouTubeResumeCache`).
+        if let startTime = yt.startTime, startTime > 0 {
+            YouTubeResumeCache.shared.record(videoID: yt.videoId, seconds: TimeInterval(startTime), duration: duration)
+        }
         return Video(
             id: yt.videoId,
             title: yt.title ?? "",
@@ -194,7 +199,7 @@ enum Mappers {
 
     // MARK: - Formats
 
-    static func format(from yt: any DownloadFormat) -> VideoFormat {
+    static func format(from yt: any AdaptiveDownloadFormat) -> VideoFormat {
         let mime = yt.mimeType ?? ""
         if let video = yt as? VideoDownloadFormat {
             return VideoFormat(

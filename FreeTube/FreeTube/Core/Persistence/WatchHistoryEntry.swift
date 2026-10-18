@@ -15,6 +15,9 @@ final class WatchHistoryEntry {
     /// resume-on-tap can skip entries that already reached the end. Default 0 — SwiftData
     /// lightweight migration fills existing rows with this on first read after the upgrade.
     var duration: TimeInterval = 0
+    /// When `lastPosition` was last written. Compared with when YouTube's resume point was seen
+    /// to decide which is newer. `nil` for rows saved before this field existed.
+    var positionSavedAt: Date?
 
     init(
         videoID: String,

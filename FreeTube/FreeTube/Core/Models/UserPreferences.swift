@@ -23,6 +23,10 @@ struct UserPreferences {
     /// Language of the captions the user last turned on (`CaptionTrack.languageCode`); empty when
     /// captions were last turned off. New videos auto-select a matching track.
     @AppStorage("preferredCaptionLanguage") var preferredCaptionLanguage: String = ""
+    /// Report watch progress to the signed-in YouTube account (history + resume point shared with
+    /// YouTube's own apps). User-requested exception to "no remote reporting" (CLAUDE.md §2.4):
+    /// it only talks to YouTube, only when signed in, and can be turned off in Settings.
+    @AppStorage("syncWatchProgress") var syncWatchProgress: Bool = true
 
     var preferredQuality: VideoQuality {
         get { VideoQuality(rawValue: preferredQualityRaw) ?? .auto }

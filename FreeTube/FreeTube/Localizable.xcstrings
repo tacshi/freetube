@@ -1586,6 +1586,40 @@
         }
       }
     },
+    "Exit theater mode" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kinomodus beenden"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exit theater mode"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Salir del modo cine"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quitter le mode cinéma"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выйти из режима кинотеатра"
+          }
+        }
+      }
+    },
     "Failed" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -5196,6 +5230,74 @@
         }
       }
     },
+    "Sync watch progress with YouTube" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiedergabefortschritt mit YouTube synchronisieren"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync watch progress with YouTube"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincronizar el progreso con YouTube"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Synchroniser la progression avec YouTube"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Синхронизировать прогресс с YouTube"
+          }
+        }
+      }
+    },
+    "Theater mode" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kinomodus"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Theater mode"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modo cine"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mode cinéma"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Режим кинотеатра"
+          }
+        }
+      }
+    },
     "This channel has no public playlists." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -5744,6 +5846,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Когда включено, при каждом запуске приложения создаётся новый файл лога в Documents/Logs/ (виден в приложении «Файлы»). Каждый файл начинается с версии приложения, сборки, версии iOS и модели устройства, после чего следуют записи с метками времени из подсистемы FreeTube. Полезно для отправки диагностики разработчику, когда что-то ломается в TestFlight или sideload-установках."
+          }
+        }
+      }
+    },
+    "When signed in, videos you watch are added to your YouTube history and resume where you left off on any device." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wenn du angemeldet bist, werden angesehene Videos deinem YouTube-Verlauf hinzugefügt und auf jedem Gerät dort fortgesetzt, wo du aufgehört hast."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When signed in, videos you watch are added to your YouTube history and resume where you left off on any device."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Con la sesión iniciada, los vídeos que ves se añaden a tu historial de YouTube y se reanudan donde lo dejaste en cualquier dispositivo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une fois connecté, les vidéos que vous regardez sont ajoutées à votre historique YouTube et reprennent là où vous vous étiez arrêté, sur n'importe quel appareil."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "После входа просмотренные видео добавляются в историю YouTube и продолжаются с того же места на любом устройстве."
           }
         }
       }

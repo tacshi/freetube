@@ -2,8 +2,8 @@ import SwiftUI
 
 /// The player's own controls, drawn over `VideoSurface` (CLAUDE.md §8).
 ///
-/// - **Top bar:** close chevron on the leading side; captions (CC, when the video has any), full
-///   screen, Picture in Picture and AirPlay on the trailing side.
+/// - **Top bar:** close chevron on the leading side; captions (CC, when the video has any),
+///   theater mode (wide windows), full screen, Picture in Picture and AirPlay on the trailing side.
 /// - **Center:** −10s / play-pause / +10s.
 /// - **Bottom:** elapsed time, scrubber, remaining time, ⋯ menu (speed, subtitles, audio).
 /// - **Captions:** the selected YouTube caption track, drawn above the bottom bar.
@@ -16,6 +16,8 @@ struct PlayerControlsOverlay: View {
     @Environment(PlayerStateManager.self) private var player
     @Environment(\.layoutDirection) private var layoutDirection
     @Binding var isFullScreen: Bool
+    /// Theater-mode toggle state; `nil` hides the button (narrow / stacked layouts, full screen).
+    var theaterMode: Binding<Bool>?
     let pictureInPicture: PictureInPictureModel
     /// Extra top padding for the top bar — the iPad window controls' footprint when the video
     /// fills the window in full-screen mode.
@@ -127,6 +129,14 @@ struct PlayerControlsOverlay: View {
                     player.toggleCaptions()
                 }
             }
+            if let theaterMode {
+                iconButton(
+                    label: theaterMode.wrappedValue ? "Exit theater mode" : "Theater mode",
+                    action: { withAnimation(.snappy) { theaterMode.wrappedValue.toggle() } }
+                ) {
+                    TheaterModeIcon(isOn: theaterMode.wrappedValue)
+                }
+            }
             iconButton(
                 isFullScreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
                 label: isFullScreen ? "Exit full screen" : "Full screen"
@@ -168,10 +178,10 @@ struct PlayerControlsOverlay: View {
     private var bottomBar: some View {
         HStack(spacing: 10) {
             if player.duration > 0 {
-                Text(verbatim: Self.timestamp(scrubTarget ?? player.elapsed))
+                Text(verbatim: Self.timestamp(scrubTarget ?? player.displayPosition))
                     .font(.caption.monospacedDigit())
                 ScrubberBar(
-                    position: scrubTarget ?? player.elapsed,
+                    position: scrubTarget ?? player.displayPosition,
                     duration: player.duration,
                     onChanged: { target in
                         isDraggingScrubber = true
@@ -186,7 +196,7 @@ struct PlayerControlsOverlay: View {
                         scheduleAutoHide()
                     }
                 )
-                Text(verbatim: "−" + Self.timestamp(max(0, player.duration - (scrubTarget ?? player.elapsed))))
+                Text(verbatim: "−" + Self.timestamp(max(0, player.duration - (scrubTarget ?? player.displayPosition))))
                     .font(.caption.monospacedDigit())
             } else {
                 Spacer(minLength: 0)
@@ -373,12 +383,22 @@ struct PlayerControlsOverlay: View {
         font: Font = .title3,
         action: @escaping () -> Void
     ) -> some View {
+        iconButton(label: label, action: action) {
+            Image(systemName: systemImage)
+                .font(font.weight(.semibold))
+        }
+    }
+
+    private func iconButton<Icon: View>(
+        label: LocalizedStringKey,
+        action: @escaping () -> Void,
+        @ViewBuilder icon: () -> Icon
+    ) -> some View {
         Button {
             action()
             showControls()
         } label: {
-            Image(systemName: systemImage)
-                .font(font.weight(.semibold))
+            icon()
                 .frame(minWidth: 44, minHeight: 44)
                 .contentShape(Rectangle())
         }
@@ -439,6 +459,25 @@ struct PlayerControlsOverlay: View {
         let total = Int(max(0, seconds))
         let h = total / 3600, m = (total % 3600) / 60, s = total % 60
         return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
+    }
+}
+
+/// Theater-mode glyph: a wide rectangle with triangles on its left and right — pointing outward
+/// to widen, inward to go back. SF Symbols has no landscape rectangle with side arrows
+/// (`rectangle.arrowtriangle.2.outward` puts them above and below), hence the composition.
+@available(iOS 17.0, *)
+private struct TheaterModeIcon: View {
+    let isOn: Bool
+
+    var body: some View {
+        HStack(spacing: 2) {
+            Image(systemName: isOn ? "arrowtriangle.right.fill" : "arrowtriangle.left.fill")
+                .font(.system(size: 8, weight: .bold))
+            Image(systemName: "rectangle")
+                .font(.title3.weight(.semibold))
+            Image(systemName: isOn ? "arrowtriangle.left.fill" : "arrowtriangle.right.fill")
+                .font(.system(size: 8, weight: .bold))
+        }
     }
 }
 

@@ -109,6 +109,15 @@ final class PlayerStateManager {
     private var pendingResume: (videoID: String, time: TimeInterval)?
     /// Last position written for the current item; saves are throttled to every few seconds.
     private var lastSavedPosition: TimeInterval = 0
+    /// Reports watch progress to the signed-in YouTube account (history + resume point on every
+    /// device). Only active when signed in and `UserPreferences.syncWatchProgress` is on.
+    @ObservationIgnored private let watchReporter = WatchProgressReporter()
+
+    // MARK: Seeking
+    /// Where an in-flight (or queued) seek is headed; `nil` when no seek is pending.
+    private(set) var pendingSeekTarget: TimeInterval?
+    @ObservationIgnored private var seekInFlight = false
+    @ObservationIgnored private var queuedSeek: (time: TimeInterval, precise: Bool)?
 
     init(
         queue: QueueManager = QueueManager(),
@@ -164,8 +173,11 @@ final class PlayerStateManager {
             log.debug("load: clearing AVQueuePlayer items (\(self.player.items().count, privacy: .public) entries)")
             player.removeAllItems()
         }
+        watchReporter.end()
         itemVideoID = nil
         pendingResume = nil
+        queuedSeek = nil
+        pendingSeekTarget = nil
         clearMediaChoices()
         currentVideo = video
         // Keep the queue coherent. Fresh taps from search/home append the video; subsequent calls
@@ -214,6 +226,7 @@ final class PlayerStateManager {
         player.pause()
         isPlaying = false
         savePosition(force: true)
+        watchReporter.flush()
     }
 
     func togglePlayPause() {
@@ -221,23 +234,56 @@ final class PlayerStateManager {
         isPlaying ? pause() : play()
     }
 
-    /// `precise: false` seeks to the nearest keyframe — fast enough to call on every drag update
-    /// while scrubbing; the final position is then set with a precise seek.
+    /// Seeks to `seconds`. `precise: false` lands on the nearest keyframe — fast, used for live
+    /// feedback while scrubbing; the final position is then set with a precise seek.
+    ///
+    /// **Coalesced ("chase") seeking**, per Apple's smooth-scrubbing guidance: only one seek runs
+    /// at a time; requests that arrive meanwhile replace each other, and when the running seek
+    /// completes the latest one starts. Firing a seek on every drag update (~60/s) at an HLS
+    /// stream — each one fetching a new segment — left playback stalled at a stale point, and
+    /// because `currentTime` still reported that point, the next scrub restarted from it.
     func seek(to seconds: TimeInterval, precise: Bool = true) {
-        let time = CMTime(seconds: seconds, preferredTimescale: 600)
         if precise {
             log.info("seek(to: \(seconds, privacy: .public)s)")
-            player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero)
-        } else {
-            player.seek(to: time, toleranceBefore: .positiveInfinity, toleranceAfter: .positiveInfinity)
+        }
+        pendingSeekTarget = seconds
+        queuedSeek = (seconds, precise)
+        if !seekInFlight {
+            startQueuedSeek()
         }
     }
 
-    /// The player's position right now. `elapsed` only ticks every 0.5s, which is too coarse
-    /// for rapid repeated double-tap seeks or the start point of a scrub.
+    private func startQueuedSeek() {
+        guard let next = queuedSeek else {
+            seekInFlight = false
+            let now = player.currentTime().seconds
+            if now.isFinite { elapsed = now }
+            pendingSeekTarget = nil
+            return
+        }
+        queuedSeek = nil
+        seekInFlight = true
+        let time = CMTime(seconds: next.time, preferredTimescale: 600)
+        let tolerance: CMTime = next.precise ? .zero : .positiveInfinity
+        player.seek(to: time, toleranceBefore: tolerance, toleranceAfter: tolerance) { [weak self] _ in
+            guard let manager = self else { return }
+            Task { @MainActor in manager.startQueuedSeek() }
+        }
+    }
+
+    /// The player's position right now — or where an in-flight seek is headed. `elapsed` only
+    /// ticks every 0.5s, which is too coarse for rapid repeated double-tap seeks or the start
+    /// point of a scrub, and `currentTime` lags until a seek completes.
     var livePosition: TimeInterval {
+        if let pendingSeekTarget { return pendingSeekTarget }
         let now = player.currentTime().seconds
         return now.isFinite ? now : elapsed
+    }
+
+    /// Position to show in the UI: the in-flight seek target while seeking, else `elapsed`. Keeps
+    /// the scrubber from snapping back to the old time while the new segment loads.
+    var displayPosition: TimeInterval {
+        pendingSeekTarget ?? elapsed
     }
 
     func seekRelative(by delta: TimeInterval) {
@@ -289,6 +335,7 @@ final class PlayerStateManager {
     func dismiss() {
         log.info("dismiss()")
         pause()
+        watchReporter.end()
         fullScreenPresented = false
         itemVideoID = nil
         pendingResume = nil
@@ -355,7 +402,7 @@ final class PlayerStateManager {
         // straight to `AVPlayer` — no download, nothing written to disk. If the item later fails,
         // `retryStream(after:)` re-resolves once.
         streamRetriedVideoID = nil
-        async let savedPosition = PersistenceWriter.shared.resumePosition(videoID: video.id)
+        async let localPlayback = PersistenceWriter.shared.savedPlayback(videoID: video.id)
         let stream: ResolvedStream
         do {
             stream = try await streams.resolveStream(videoID: video.id)
@@ -370,10 +417,17 @@ final class PlayerStateManager {
             log.info("resolveAndPlay: \(video.id, privacy: .public) superseded before playback, dropping")
             return
         }
-        let resumeAt = await savedPosition
+        let resumeAt = Self.resumePoint(
+            local: await localPlayback,
+            youTube: YouTubeResumeCache.shared.entry(for: video.id),
+            duration: video.duration
+        )
         guard currentVideo?.id == video.id else { return }
         loadItem(makeItem(url: stream.hlsURL))
         itemVideoID = video.id
+        if preferences.syncWatchProgress, case .loggedIn = AuthState.shared.status {
+            watchReporter.begin(videoID: video.id, at: resumeAt ?? 0)
+        }
         captionTracks = stream.captions
         autoSelectCaption()
         lastSavedPosition = resumeAt ?? 0
@@ -524,6 +578,35 @@ final class PlayerStateManager {
         return group.options.firstIndex(of: selected)
     }
 
+    /// Where to start `video`: the app's own saved position or the account's YouTube resume point,
+    /// whichever is newer (a local save after the feed was loaded wins; YouTube wins when the feed
+    /// was loaded after the last local save, e.g. after watching on another device). `nil` = start
+    /// from the beginning: no progress, under 5s in, or within 10s of the end (finished videos
+    /// start over, like YouTube).
+    static func resumePoint(
+        local: SavedPlayback?,
+        youTube: YouTubeResumeCache.Entry?,
+        duration: TimeInterval?
+    ) -> TimeInterval? {
+        let chosen: (position: TimeInterval, duration: TimeInterval?)
+        switch (local, youTube) {
+        case let (local?, youTube?):
+            chosen = (local.savedAt ?? .distantPast) >= youTube.observedAt
+                ? (local.position, local.duration)
+                : (youTube.seconds, youTube.duration)
+        case let (local?, nil):
+            chosen = (local.position, local.duration)
+        case let (nil, youTube?):
+            chosen = (youTube.seconds, youTube.duration)
+        case (nil, nil):
+            return nil
+        }
+        guard chosen.position >= 5 else { return nil }
+        let total = chosen.duration ?? duration ?? 0
+        if total > 0, chosen.position >= total - 10 { return nil }
+        return chosen.position
+    }
+
     /// Seeks the freshly loaded item to the saved resume point, once, when it becomes ready.
     private func applyPendingResume(for item: AVPlayerItem) {
         guard let pending = pendingResume,
@@ -653,6 +736,9 @@ final class PlayerStateManager {
                 }
                 self.updateNowPlaying()
                 self.savePosition(force: false)
+                if self.itemVideoID == self.currentVideo?.id, self.pendingResume == nil {
+                    self.watchReporter.tick(position: self.elapsed, isPlaying: self.isPlaying)
+                }
             }
         }
 
@@ -667,6 +753,8 @@ final class PlayerStateManager {
                 // Mark finished so reopening the video starts from the beginning.
                 if let videoID = self.itemVideoID, videoID == self.currentVideo?.id, self.duration > 0 {
                     self.persistPosition(videoID: videoID, position: self.duration, duration: self.duration)
+                    self.watchReporter.tick(position: self.duration, isPlaying: false)
+                    self.watchReporter.flush()
                 }
                 if self.preferences.autoplayNext { self.playNext() }
             }

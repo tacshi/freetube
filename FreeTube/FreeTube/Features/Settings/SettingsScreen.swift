@@ -26,8 +26,11 @@ struct SettingsScreen: View {
                         }
                     }
                     Toggle("Autoplay next video", isOn: Bindable(model).autoplayNext)
+                    Toggle("Sync watch progress with YouTube", isOn: Bindable(model).syncWatchProgress)
                 } header: {
                     Text("Playback")
+                } footer: {
+                    Text("When signed in, videos you watch are added to your YouTube history and resume where you left off on any device.")
                 }
 
                 Section("Search") {
