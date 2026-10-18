@@ -50,6 +50,9 @@ struct PlaylistScreen: View {
                         metadataBlock(details)
                         actionToolbar(details)
                     }
+                    // Cap the header column on wide layouts; the blurred backdrop below stays
+                    // full-bleed because it's applied after the full-width frame.
+                    .readableContentWidth()
                     .padding(.top, 12)
                     .padding(.bottom, 16)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -61,6 +64,7 @@ struct PlaylistScreen: View {
                     Divider()
 
                     videosList(details.videos)
+                        .readableContentWidth()
                         .padding(.vertical)
                 } else if model.isLoading {
                     LoadingView().padding(.top, 60)

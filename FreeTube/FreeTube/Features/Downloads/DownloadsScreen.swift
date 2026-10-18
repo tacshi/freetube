@@ -92,6 +92,7 @@ struct DownloadsScreen: View {
                     savedHeader
                 }
             }
+            .readableContentWidth(gutter: .grouped)
             .navigationTitle("Downloads")
             .environment(\.editMode, .constant(isSelecting ? .active : .inactive))
             .toolbar {

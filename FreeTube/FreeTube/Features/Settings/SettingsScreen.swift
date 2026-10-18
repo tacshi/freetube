@@ -180,6 +180,7 @@ struct SettingsScreen: View {
                     Text("v\(version) (\(build)) — [freetube.io](https://freetube.io)")
                 }
             }
+            .readableContentWidth(gutter: .grouped)
             .navigationTitle("Settings")
             .confirmationDialog("Reset session?", isPresented: $showingResetConfirmation, titleVisibility: .visible) {
                 Button("Reset", role: .destructive) {

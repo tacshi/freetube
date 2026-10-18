@@ -96,6 +96,7 @@ struct FetchScreen: View {
                     }
                 }
             }
+            .readableContentWidth(gutter: .grouped)
             .navigationTitle("Link")
             .navigationDestination(isPresented: probeNavBinding) {
                 FetchProbeView(model: model)

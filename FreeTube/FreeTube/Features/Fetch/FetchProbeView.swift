@@ -33,6 +33,7 @@ struct FetchProbeView: View {
                 failureView(message: message, url: url)
             }
         }
+        .readableContentWidth()
         .navigationTitle("Preview")
         .navigationBarTitleDisplayMode(.inline)
     }

@@ -1,7 +1,7 @@
 import SwiftUI
 import SwiftData
 
-/// **Search** tab. The bottom bar's primary tab; combines three things in one screen:
+/// **Home** tab. The bottom bar's primary tab; combines three things in one screen:
 ///   1. A search field (native `.searchable` on iOS/iPadOS, inline capsule on Mac).
 ///   2. A "Recent searches" section showing the last 10 queries with a Clear button.
 ///   3. The home video feed below.
@@ -21,6 +21,7 @@ struct HomeScreen: View {
     @State private var searchModel = SearchViewModel()
     @Environment(PlayerStateManager.self) private var player
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     /// Recent search queries — same store the previous Search tab used. Stays here so the
     /// host can do the upsert in `runSearch` (the field's submit fires on this view).
@@ -52,7 +53,7 @@ struct HomeScreen: View {
                     }
                 }
             }
-            .navigationTitle("Search")
+            .navigationTitle("Home")
             .modifier(ConditionalSearchable(
                 text: $searchModel.query,
                 enabled: !MacIntegration.isRunningOnMac,
@@ -89,11 +90,22 @@ struct HomeScreen: View {
         }
     }
 
-    /// The idle (non-searching) view: last 10 search queries on top, then the home video
-    /// feed. Single `List` with `.plain` style so the recents section and the feed share
-    /// row recycling and scroll smoothly together.
+    /// The idle (non-searching) view: recent searches on top, then the home video feed.
+    /// Regular width (iPad, Mac) lays the feed out as a tile grid; compact width keeps the
+    /// single-column list.
     @ViewBuilder
     private var homeFeed: some View {
+        if horizontalSizeClass == .regular {
+            homeGrid
+        } else {
+            homeList
+        }
+    }
+
+    /// Compact-width feed. Single `List` with `.plain` style so the recents section and the
+    /// feed share row recycling and scroll smoothly together.
+    @ViewBuilder
+    private var homeList: some View {
         List {
             if !history.isEmpty {
                 recentSearchesSection
@@ -140,6 +152,98 @@ struct HomeScreen: View {
             }
         }
         .listStyle(.plain)
+    }
+
+    /// Regular-width feed: recent searches as a row of chips, then each feed section as a
+    /// `VideoTileGrid`. Pagination mirrors `homeList` — the last section's trailing tiles
+    /// trigger `loadMore()`.
+    private var homeGrid: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 24) {
+                if !history.isEmpty {
+                    recentSearchChips
+                }
+
+                if model.sections.isEmpty && !model.isLoading {
+                    EmptyStateView(
+                        systemImage: "play.rectangle.on.rectangle",
+                        title: "Nothing here yet",
+                        message: "Pull to refresh or sign in to see your home feed."
+                    )
+                }
+
+                ForEach(model.sections) { section in
+                    VStack(alignment: .leading, spacing: 12) {
+                        if let title = section.title {
+                            SectionHeader(title: title)
+                        }
+                        VideoTileGrid(
+                            videos: section.videos,
+                            onPlay: { player.load($0) },
+                            onItemAppear: { video in
+                                guard section.id == model.sections.last?.id else { return }
+                                guard section.videos.suffix(5).contains(where: { $0.id == video.id }) else { return }
+                                guard model.continuationToken != nil, !model.isLoading else { return }
+                                Task { await model.loadMore() }
+                            }
+                        )
+                        .padding(.horizontal)
+                    }
+                }
+
+                if model.isLoading {
+                    LoadingView()
+                }
+            }
+            .padding(.vertical)
+        }
+    }
+
+    /// Regular-width counterpart of `recentSearchesSection`: a horizontally scrolling row of
+    /// capsules. Long-press a chip to delete it; the header's Clear button wipes them all.
+    private var recentSearchChips: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Recent searches")
+                    .font(.headline)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer()
+                Button("Clear", role: .destructive) {
+                    for entry in history { modelContext.delete(entry) }
+                    try? modelContext.save()
+                }
+                .font(.caption)
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Array(history.prefix(10))) { entry in
+                        Button {
+                            searchModel.query = entry.query
+                            Task { await runSearch() }
+                        } label: {
+                            Label(entry.query, systemImage: "clock.arrow.circlepath")
+                                .font(.subheadline)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(.quaternary, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                modelContext.delete(entry)
+                                try? modelContext.save()
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal)
+            }
+        }
     }
 
     /// "Recent searches" pinned above the home feed. Caps at the 10 most-recent entries

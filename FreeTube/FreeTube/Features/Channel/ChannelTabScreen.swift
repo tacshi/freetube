@@ -27,6 +27,7 @@ struct ChannelTabScreen: View {
                 videoList(videos)
             }
         }
+        .readableContentWidth()
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
     }

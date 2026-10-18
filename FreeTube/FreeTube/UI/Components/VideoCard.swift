@@ -3,14 +3,25 @@ import Kingfisher
 
 /// Vertical "feed" video card — used in Home, Subscriptions, Channel videos.
 ///
+/// `layout: .tile` is the grid variant used on wide (regular-width) layouts: rounded thumbnail
+/// and no horizontal padding, because the grid supplies the gutters between tiles.
+///
 /// Set `showsMoreMenu: true` to render the trailing ellipsis Menu (open in browser, copy URL,
 /// favorites, add to playlist, downloads) on the metadata row. The Menu sits as a sibling of
 /// the card's main tap target so its taps don't trigger `onTap`.
 @available(iOS 17.0, *)
 struct VideoCard: View {
+    enum Layout {
+        /// Edge-to-edge thumbnail in a single-column list.
+        case feed
+        /// Rounded thumbnail sized by its grid cell.
+        case tile
+    }
+
     let video: Video
     var onTap: () -> Void = {}
     var showsMoreMenu: Bool = false
+    var layout: Layout = .feed
 
     /// Channel name plus the playback count and relative upload date. Joined by middle dots so
     /// the line reads naturally and any missing segment is dropped without leaving stray
@@ -38,28 +49,48 @@ struct VideoCard: View {
         }
     }
 
+    @ViewBuilder
     private var thumbnail: some View {
-        ZStack(alignment: .bottomTrailing) {
-            KFImage(video.thumbnailURL)
-                .thumbnail(size: CGSize(width: 400, height: 225)) {
-                    Color.gray.opacity(0.2)
-                }
-                .resizable()
-                .scaledToFill()
-                .frame(maxWidth: .infinity)
-                .aspectRatio(16/9, contentMode: .fill)
-                .clipped()
-
-            if !video.durationString.isEmpty {
-                Text(video.durationString)
-                    .font(.caption2)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(.black.opacity(0.75))
-                    .foregroundStyle(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                    .padding(6)
+        switch layout {
+        case .feed:
+            ZStack(alignment: .bottomTrailing) {
+                thumbnailImage
+                    .frame(maxWidth: .infinity)
+                    .aspectRatio(16/9, contentMode: .fill)
+                    .clipped()
+                durationBadge
             }
+        case .tile:
+            // A fixed-ratio clear box sized by the grid cell, with the image filling it, keeps
+            // every tile in a row the same height regardless of the source thumbnail's ratio.
+            Color.clear
+                .aspectRatio(16/9, contentMode: .fit)
+                .overlay { thumbnailImage }
+                .overlay(alignment: .bottomTrailing) { durationBadge }
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
+    private var thumbnailImage: some View {
+        KFImage(video.thumbnailURL)
+            .thumbnail(size: CGSize(width: 400, height: 225)) {
+                Color.gray.opacity(0.2)
+            }
+            .resizable()
+            .scaledToFill()
+    }
+
+    @ViewBuilder
+    private var durationBadge: some View {
+        if !video.durationString.isEmpty {
+            Text(video.durationString)
+                .font(.caption2)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(.black.opacity(0.75))
+                .foregroundStyle(.white)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .padding(6)
         }
     }
 
@@ -96,6 +127,6 @@ struct VideoCard: View {
                 VideoMoreActionsMenu(video: video)
             }
         }
-        .padding(.horizontal)
+        .padding(.horizontal, layout == .feed ? nil : 0)
     }
 }

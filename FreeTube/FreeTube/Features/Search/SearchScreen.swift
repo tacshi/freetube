@@ -16,6 +16,7 @@ struct SearchContent: View {
     let onRunSearch: () -> Void
     @Environment(PlayerStateManager.self) private var player
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     /// Recently entered search queries, newest first. Tapping one re-runs the search.
     @Query(sort: \SearchHistoryEntry.searchedAt, order: .reverse) private var history: [SearchHistoryEntry]
@@ -23,7 +24,11 @@ struct SearchContent: View {
     var body: some View {
         Group {
             if let results = model.results {
-                resultsList(results)
+                if horizontalSizeClass == .regular {
+                    resultsGrid(results)
+                } else {
+                    resultsList(results)
+                }
             } else if !model.suggestions.isEmpty {
                 ScrollView {
                     SearchSuggestionList(suggestions: model.suggestions) { suggestion in
@@ -31,10 +36,12 @@ struct SearchContent: View {
                         onRunSearch()
                     }
                 }
+                .readableContentWidth()
             } else if model.isLoading {
                 LoadingView()
             } else if !history.isEmpty {
                 historyList
+                    .readableContentWidth()
             } else {
                 EmptyStateView(
                     systemImage: "magnifyingglass",
@@ -134,6 +141,74 @@ struct SearchContent: View {
             }
         }
         .listStyle(.plain)
+    }
+
+    /// Regular-width results: channels and playlists as row tiles, videos as a
+    /// `VideoTileGrid`. Same sections, order and pagination trigger as `resultsList`.
+    private func resultsGrid(_ results: SearchResult) -> some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 24) {
+                if !results.channels.isEmpty {
+                    gridSection(String(localized: "Channels")) {
+                        LazyVGrid(columns: VideoTileGrid.rowColumns, alignment: .leading, spacing: 12) {
+                            ForEach(results.channels) { channel in
+                                NavigationLink {
+                                    ChannelScreen(channelID: channel.id)
+                                } label: {
+                                    ChannelRow(channel: channel)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+                if !results.playlists.isEmpty {
+                    gridSection(String(localized: "Playlists")) {
+                        LazyVGrid(columns: VideoTileGrid.rowColumns, alignment: .leading, spacing: 12) {
+                            ForEach(results.playlists) { playlist in
+                                NavigationLink {
+                                    PlaylistScreen(playlistID: playlist.id)
+                                } label: {
+                                    PlaylistRow(playlist: playlist, showsMoreMenu: true)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+                if !results.videos.isEmpty {
+                    let lookaheadIDs = Set(results.videos.suffix(5).map(\.id))
+                    gridSection(String(localized: "Videos")) {
+                        VideoTileGrid(
+                            videos: results.videos,
+                            onPlay: { player.load($0) },
+                            onItemAppear: { video in
+                                guard lookaheadIDs.contains(video.id),
+                                      results.continuationToken != nil,
+                                      !model.isLoading else { return }
+                                Task { await model.loadMore() }
+                            }
+                        )
+                    }
+                    if model.isLoading {
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+            }
+            .padding(.vertical)
+        }
+    }
+
+    private func gridSection<Content: View>(
+        _ title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: title)
+            content()
+                .padding(.horizontal)
+        }
     }
 }
 

@@ -35,6 +35,7 @@ struct HistoryScreen: View {
             }
         }
         .listStyle(.plain)
+        .readableContentWidth()
         .navigationTitle("History")
         .task { await model.load() }
         .refreshable { await model.load() }

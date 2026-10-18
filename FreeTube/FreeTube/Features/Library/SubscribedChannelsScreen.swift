@@ -54,6 +54,7 @@ struct SubscribedChannelsScreen: View {
                 .listStyle(.plain)
             }
         }
+        .readableContentWidth()
         .navigationTitle("Subscriptions")
         .navigationBarTitleDisplayMode(.inline)
         .task {

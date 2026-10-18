@@ -30,6 +30,7 @@ struct ChannelScreen: View {
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
+        .readableContentWidth()
         .navigationBarTitleDisplayMode(.inline)
         .task { await model.load() }
         .errorToast(Bindable(model).errorState)

@@ -7,7 +7,7 @@ import UIKit
 /// Top-level tabbed shell. CLAUDE.md §8: mini-player sits above the tab bar and persists across tabs.
 ///
 /// Tab layout (5):
-/// - Search (search field, recent searches, and the home video feed in one screen)
+/// - Home (home video feed, with the search field and recent searches in the same screen)
 /// - Library (subsumes the former Account + Subscriptions tabs; includes Favorites/Recents/Playlists/Login)
 /// - Link (yt-dlp-powered universal downloader; pastes any link from ~2,000 supported sites)
 /// - Downloads (saved videos + live transfer queue with progress)
@@ -15,7 +15,7 @@ import UIKit
 @available(iOS 17.0, *)
 struct RootView: View {
     @Environment(PlayerStateManager.self) private var player
-    @State private var selectedTab: Tab = .search
+    @State private var selectedTab: Tab = .home
     /// Direct observation of the shared download manager — no AsyncStream subscription needed since
     /// `DownloadManager` is itself `@Observable`. Both this view (for the badge) and `DownloadsScreen`
     /// (for the list) read the same source of truth.
@@ -25,7 +25,7 @@ struct RootView: View {
     @State private var thumbnail: UIImage?
 
     enum Tab: Hashable {
-        case search, library, link, downloads, settings
+        case home, library, link, downloads, settings
     }
 
     private var activeDownloadsCount: Int {
@@ -42,8 +42,8 @@ struct RootView: View {
 
         TabView(selection: $selectedTab) {
             HomeScreen()
-                .tabItem { Label("Search", systemImage: "magnifyingglass") }
-                .tag(Tab.search)
+                .tabItem { Label("Home", systemImage: "house.fill") }
+                .tag(Tab.home)
 
             LibraryScreen()
                 .tabItem { Label("Library", systemImage: "play.square.stack") }

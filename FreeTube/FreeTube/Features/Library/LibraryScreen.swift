@@ -27,6 +27,7 @@ struct LibraryScreen: View {
                     menuSection
                 }
             }
+            .readableContentWidth(gutter: .grouped)
             .navigationTitle("Library")
             .task {
                 await accountModel.load()
@@ -234,6 +235,7 @@ private struct UserPlaylistsScreen: View {
                 .listStyle(.plain)
             }
         }
+        .readableContentWidth()
         .navigationTitle("Playlists")
         .navigationBarTitleDisplayMode(.inline)
     }
