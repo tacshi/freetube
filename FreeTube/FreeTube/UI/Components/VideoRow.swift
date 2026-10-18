@@ -4,7 +4,7 @@ import Kingfisher
 /// Horizontal compact video row — used in search results, history, library lists.
 ///
 /// Set `showsMoreMenu: true` to render a trailing ellipsis Menu next to the row content
-/// (open in browser, copy URL, favorites, add to playlist, downloads). The Menu lives as a
+/// (open in browser, copy URL, favorites, add to playlist). The Menu lives as a
 /// sibling of the main tap target so taps on it don't trigger `onTap`.
 @available(iOS 17.0, *)
 struct VideoRow: View {

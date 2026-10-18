@@ -28,10 +28,6 @@ protocol VideoServicing: Sendable {
     func fetchInfo(id: String) async throws -> VideoInfo
     func fetchInfoWithFormats(id: String) async throws -> VideoInfoWithFormats
     func fetchMoreInfo(id: String) async throws -> VideoInfo
-    /// Alternate fetch using the `TVHTML5_SIMPLY_EMBEDDED_PLAYER` client — same response shape
-    /// as `fetchInfo`, but the returned per-format URLs aren't PoT-protected. Used by the resolver
-    /// as a fallback when the iOS client gives us only PoT-locked adaptive streams.
-    func fetchInfoViaTVHTML5(id: String) async throws -> VideoInfo
 }
 
 /// Wraps `VideoInfosResponse`, `VideoInfosWithDownloadFormatsResponse`, `MoreVideoInfosResponse`.
@@ -59,23 +55,6 @@ final class VideoService: VideoServicing {
         } catch {
             log.error("fetchInfo[IOS] FAILED id=\(id, privacy: .public): \(String(describing: error), privacy: .public)")
             await Self.clearSessionIfLoginRequired(error)
-            throw YouTubeServiceError.network(error)
-        }
-    }
-
-    func fetchInfoViaTVHTML5(id: String) async throws -> VideoInfo {
-        log.info("fetchInfo[TVHTML5] start id=\(id, privacy: .public)")
-        await client.ensureVisitorData()
-        do {
-            let response = try await VideoInfosResponse.sendThrowingRequest(
-                youtubeModel: client.tvHtmlModel,
-                data: [.query: id]
-            )
-            let info = Self.videoInfo(from: response, id: id, recommended: [])
-            log.info("fetchInfo[TVHTML5] ok id=\(id, privacy: .public) hls=\(info.streamingURL != nil, privacy: .public) formats=\(info.formats.count, privacy: .public)")
-            return info
-        } catch {
-            log.error("fetchInfo[TVHTML5] FAILED id=\(id, privacy: .public): \(String(describing: error), privacy: .public)")
             throw YouTubeServiceError.network(error)
         }
     }

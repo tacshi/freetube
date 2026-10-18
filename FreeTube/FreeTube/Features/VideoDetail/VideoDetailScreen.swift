@@ -88,11 +88,6 @@ struct VideoDetailScreen: View {
             } label: {
                 Label("Save", systemImage: "bookmark")
             }
-            Button {
-                // TODO: enqueue user download
-            } label: {
-                Label("Download", systemImage: "arrow.down.circle")
-            }
         }
         .labelStyle(.iconOnly)
         .padding(.horizontal)

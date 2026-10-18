@@ -4,15 +4,15 @@ import UIKit
 import OSLog
 import Kingfisher
 
-/// Expanded player content presented by `LNPopupUI` when the popup bar is opened. The popup chrome
-/// (close button) is provided by the library — this view renders the surface, transport controls,
-/// metadata, and the toggleable comments / queue panel below.
+/// The player, presented by `RootView` as a full-screen cover as soon as a video is tapped (there
+/// is no mini player). Renders the surface, transport controls, metadata, the toggleable
+/// comments / queue panel, and its own Close button; closing stops playback.
 @available(iOS 17.0, *)
 struct FullScreenPlayer: View {
     @Environment(PlayerStateManager.self) private var player
     @Environment(\.modelContext) private var modelContext
     /// Reactive list of all favorited videos so menu rendering doesn't have to fetch Core Data on
-    /// every redraw (which was the bug DownloadsScreen had: per-row SQL on the main queue).
+    /// every redraw (per-row SQL on the main queue otherwise).
     @Query private var favorites: [FavoriteVideo]
 
     /// What's shown in the lower panel. Default is `.queue` so the user can see what's coming up
@@ -27,9 +27,6 @@ struct FullScreenPlayer: View {
     /// True when the user has expanded the description block — shows full text instead of a
     /// truncated preview, and tries to load extended details (tags etc.) if not yet loaded.
     @State private var isDetailsExpanded = false
-    /// File URL the user wants to hand off to another app via the system "Open in…" share sheet.
-    /// Non-nil → present the activity controller; tapped row sets this, sheet dismissal clears it.
-    @State private var shareFileURL: URL?
     /// Currently-pushed channel (nil = panel mode). When non-nil, the lower section swaps the
     /// metadata + comments/queue panel for a NavigationStack rooted at `ChannelScreen`. Keeping
     /// the NavigationStack **conditionally mounted** is what makes the panel-mode background
@@ -45,6 +42,17 @@ struct FullScreenPlayer: View {
     /// presentation. We capture the whole `Video` (not just the id) so the sheet can show its
     /// title at the top of the picker.
     @State private var addToPlaylistVideo: Video?
+    /// How far the iPadOS window controls reach into the player's top edge (0 when there are
+    /// none). The video column is pushed down by this much so the traffic lights don't cover the
+    /// player's top bar (in full-screen mode the top bar itself is padded instead). See
+    /// `WindowControlsInsetReader`.
+    @State private var windowControlsInset: CGFloat = 0
+    /// Copy URL is showing its "Copied" confirmation.
+    @State private var showsCopied = false
+    /// PiP for the video layer; shared by `VideoSurface` (attaches) and the controls (toggle).
+    @State private var pictureInPicture = PictureInPictureModel()
+    /// Full-screen mode: the video fills the player window and everything else hides.
+    @State private var isVideoFullScreen = false
 
     /// Hashable wrapper so `.navigationDestination(for:)` can match the channel id and push
     /// `ChannelScreen` onto `channelPath`.
@@ -72,51 +80,74 @@ struct FullScreenPlayer: View {
         // `usesSideBySideLayout(for:)`.
         GeometryReader { proxy in
             let sideBySide = Self.usesSideBySideLayout(for: proxy.size)
-            let videoWidth = sideBySide ? Self.sideBySideVideoWidth(for: proxy.size) : proxy.size.width
+            let videoSize = videoSize(in: proxy.size, sideBySide: sideBySide)
             // `AnyLayout` rather than an `if`/`else` so rotating between the stacked and
-            // side-by-side arrangements keeps view identity: the `AVPlayerViewController`
-            // behind `PlayerSurface` isn't torn down mid-playback, and the comments / queue
-            // panel keeps its scroll position.
+            // side-by-side arrangements keeps view identity: the video layer (and its PiP
+            // controller) isn't torn down mid-playback, and the comments / queue panel keeps its
+            // scroll position.
             let layout = sideBySide
                 ? AnyLayout(HStackLayout(alignment: .top, spacing: 0))
                 : AnyLayout(VStackLayout(spacing: 0))
 
             layout {
                 VStack(spacing: 0) {
-                    videoSurface(width: videoWidth)
+                    videoSurface(size: videoSize)
 
-                    transportRow
-                        .padding(.vertical, 10)
+                    if !isVideoFullScreen {
+                        transportRow(showsPanelToggle: !sideBySide)
+                            .padding(.vertical, 10)
+
+                        // Side by side, the space under the video holds the video's info and
+                        // comments (like YouTube's iPad layout); the right column is Up next.
+                        if sideBySide, let video = player.currentVideo {
+                            Divider()
+                            infoAndComments(video)
+                        }
+                    }
                 }
-                .frame(width: videoWidth)
+                .padding(.top, isVideoFullScreen ? 0 : windowControlsInset)
+                .frame(width: videoSize.width)
 
-                // Horizontal rule under the transport row when stacked; vertical rule between
-                // the two columns when side by side.
-                Divider()
+                if !isVideoFullScreen {
+                    // Horizontal rule under the transport row when stacked; vertical rule
+                    // between the two columns when side by side.
+                    Divider()
 
-                lowerSection
+                    lowerSection(sideBySide: sideBySide)
+                }
+            }
+            // Measured on the whole player (whose frame doesn't move with the padding above),
+            // so applying the inset can't feed back into the measurement.
+            .background {
+                WindowControlsInsetReader { windowControlsInset = $0 }
             }
         // One continuous material under EVERYTHING, including the top safe-area inset (status bar).
         // VStack content still respects safe area; only the material extends behind the inset.
         .background {
-            Rectangle()
-                .fill(.thinMaterial)
-                .ignoresSafeArea()
+            if isVideoFullScreen {
+                Color.black.ignoresSafeArea()
+            } else {
+                Rectangle()
+                    .fill(.thinMaterial)
+                    .ignoresSafeArea()
+            }
         }
-        // Ensure the system status bar stays visible and gets light-content (white) glyphs against
-        // the dark material. LNPopupUI's `LNPopupContentHostingController` is a UIHostingController
-        // subclass that doesn't override status bar style, so SwiftUI's colorScheme drives it.
+        // Light-content (white) status bar glyphs against the dark material; hidden while the
+        // video is full screen.
         .preferredColorScheme(.dark)
-        .statusBarHidden(false)
-        // Presents UIActivityViewController for the "Open in…" menu action. Wrapping shareFileURL
-        // in a `Binding<Bool>` that flips when the URL is set/cleared so the sheet lifecycle
-        // matches the user's intent.
-        .sheet(isPresented: Binding(
-            get: { shareFileURL != nil },
-            set: { if !$0 { shareFileURL = nil } }
-        )) {
-            if let url = shareFileURL {
-                ActivityShareSheet(activityItems: [url])
+        .statusBarHidden(isVideoFullScreen)
+        .persistentSystemOverlays(isVideoFullScreen ? .hidden : .automatic)
+        // Reset description state, (best-effort) prefetch the snippet, AND pop any pushed
+        // channel screen whenever the user picks a new video — otherwise tapping the next video
+        // in the queue would leave a stale channel push on screen. Lives here (not on the lower
+        // section) so hiding the panels in full-screen mode doesn't re-trigger it.
+        .onChange(of: player.currentVideo?.id, initial: true) { _, _ in
+            details = nil
+            isDetailsExpanded = false
+            pushedChannel = nil
+            channelPath = NavigationPath()
+            if let video = player.currentVideo {
+                prefetchDescriptionIfAvailable(for: video)
             }
         }
         // "Add to playlist" sheet, presented when the menu sets `addToPlaylistVideo`. The sheet
@@ -124,12 +155,6 @@ struct FullScreenPlayer: View {
         .sheet(item: $addToPlaylistVideo) { video in
             AddToPlaylistSheet(videoID: video.id, videoTitle: video.title)
         }
-        // Pull-down-to-dismiss is handled by LNPopupUI via `.popupInteractionStyle(...)` in
-        // RootView. We don't install a custom DragGesture here — it would race with the system
-        // gesture arbitration the popup hosts (and with AVPlayerViewController's own touch
-        // handling once the video surface goes interactive). That was the bug where the
-        // expanded player wouldn't visibly follow the finger during a downward swipe once
-        // playback started; the close was only happening on touch-up.
 
         // Make the VStack fill the GeometryReader's bounds. Without this, the VStack only
         // claims the natural content height (video + transport + divider + panel intrinsic
@@ -137,60 +162,48 @@ struct FullScreenPlayer: View {
         // smaller-than-content windows (Mac shrunk) this is invisible; on larger ones
         // (Mac maximized) you'd see an unfilled gap below the panel.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        // Bottom-anchored Close button. The button itself is the glass surface
-        // (`.buttonStyle(.glass)` on iOS 26), centered with transparent space around it so
-        // the popup's `thinMaterial` background reads through on either side. `.safeAreaInset`
-        // pushes the panel's ScrollView content up so nothing gets stuck behind the button,
-        // and the inset respects the bottom home-indicator / window safe area automatically.
-        .safeAreaInset(edge: .bottom) {
-            HStack {
-                Spacer()
-                closeFullScreenButton
-                Spacer()
-            }
-            .padding(.bottom, 8)
-        }
         }
     }
 
     // MARK: - Layout pieces
 
-    /// Video surface pinned to `width × width*9/16`.
-    @ViewBuilder
-    private func videoSurface(width: CGFloat) -> some View {
+    /// Video layer with the player's own controls on top (`PlayerControlsOverlay`). 16:9 in the
+    /// normal layouts; in full-screen mode it fills the player and the picture letterboxes.
+    private func videoSurface(size: CGSize) -> some View {
         ZStack {
             Color.black
-            PlayerSurface(player: player.player)
-            DownloadProgressOverlay(state: player.loadState)
+            VideoSurface(player: player.player, pictureInPicture: pictureInPicture)
+            PlaybackStatusOverlay(state: player.loadState)
+            PlayerControlsOverlay(
+                isFullScreen: $isVideoFullScreen,
+                pictureInPicture: pictureInPicture,
+                topInset: isVideoFullScreen ? windowControlsInset : 0,
+                onClose: closePlayer
+            )
         }
-        .frame(width: width, height: width * 9 / 16)
-        // Pull-down-to-dismiss starting from the video surface.
-        //
-        // `AVPlayerViewController`'s internal `UIPanGestureRecognizer`s (scrubber, system
-        // controls) consume touches before they can reach LNPopupUI's outer pan, so the
-        // library's `.popupInteractionStyle(.drag)` only works when the gesture starts on
-        // SwiftUI views below the video (comments / queue). `.simultaneousGesture` is the
-        // escape hatch: SwiftUI composes this `DragGesture` with the UIKit recognizers
-        // underneath instead of arbitrating between them, so AVPlayerViewController's
-        // controls keep working AND we can detect a downward pull and dismiss the popup
-        // imperatively. LNPopupUI animates the collapse — we just flip the binding.
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 30, coordinateSpace: .global)
-                .onEnded { value in
-                    let mostlyDown = value.translation.height > 90
-                        && abs(value.translation.width) < value.translation.height
-                    let fastFlick = value.predictedEndTranslation.height > 180
-                    if mostlyDown || fastFlick {
-                        @Bindable var p = player
-                        p.fullScreenPresented = false
-                    }
-                }
-        )
+        .frame(width: size.width, height: size.height)
     }
 
-    /// Metadata + comments / queue panel, or the pushed channel stack.
+    private func videoSize(in container: CGSize, sideBySide: Bool) -> CGSize {
+        if isVideoFullScreen { return container }
+        let width = sideBySide
+            ? Self.sideBySideVideoWidth(for: CGSize(width: container.width,
+                                                    height: container.height - windowControlsInset))
+            : container.width
+        return CGSize(width: width, height: width * 9 / 16)
+    }
+
+    /// Dismisses the player cover; `RootView`'s `onDismiss` stops playback.
+    private func closePlayer() {
+        @Bindable var p = player
+        p.fullScreenPresented = false
+    }
+
+    /// Stacked: metadata + comments / queue panel. Side by side: Up next only (info and comments
+    /// live under the video). Either way, the pushed channel stack replaces it when a channel
+    /// is open.
     @ViewBuilder
-    private var lowerSection: some View {
+    private func lowerSection(sideBySide: Bool) -> some View {
         if let video = player.currentVideo {
             // **Two render modes for the lower section, picked by `pushedChannel`:**
             //
@@ -211,19 +224,11 @@ struct FullScreenPlayer: View {
             Group {
                 if let channel = pushedChannel {
                     channelStack(channel)
+                } else if sideBySide {
+                    upNextColumn
                 } else {
                     panel(video)
                 }
-            }
-            // Reset description state, (best-effort) prefetch the snippet, AND pop any
-            // pushed channel screen whenever the user picks a new video — otherwise tapping
-            // the next video in the queue would leave a stale channel push on screen.
-            .onChange(of: video.id, initial: true) { _, _ in
-                details = nil
-                isDetailsExpanded = false
-                pushedChannel = nil
-                channelPath = NavigationPath()
-                prefetchDescriptionIfAvailable(for: video)
             }
         }
     }
@@ -235,9 +240,9 @@ struct FullScreenPlayer: View {
     private static let sideBySideMinWidth: CGFloat = 700
     /// Share of the popup width the video column takes in side-by-side mode.
     private static let sideBySideVideoFraction: CGFloat = 0.6
-    /// Transport row height plus its vertical padding (48pt play button + 2 × 10pt), kept free
-    /// under the video when capping the video column to the available height.
-    private static let transportReserveHeight: CGFloat = 72
+    /// Transport row height plus its vertical padding (36pt buttons / chips + 2 × 10pt), kept
+    /// free under the video when capping the video column to the available height.
+    private static let transportReserveHeight: CGFloat = 56
 
     /// Side by side when the popup is landscape-shaped and wide enough for two usable columns.
     /// Stacked, a full-width video in a landscape window is `width × 9/16` tall: on an iPad that
@@ -246,54 +251,13 @@ struct FullScreenPlayer: View {
         size.width > size.height && size.width >= sideBySideMinWidth
     }
 
-    /// Video column width: a fixed share of the popup, capped so the 16:9 surface, the
-    /// transport row and the bottom Close button (whose `.safeAreaInset` sits inside the
-    /// `GeometryReader`, so `size` still includes it) fit the height of short windows
-    /// (Stage Manager, Mac).
+    /// Video column width: a fixed share of the popup, capped so the 16:9 surface and the
+    /// transport row fit the height of short windows (Stage Manager, Mac).
     private static func sideBySideVideoWidth(for size: CGSize) -> CGFloat {
         let byWidth = size.width * sideBySideVideoFraction
-        let available = size.height - transportReserveHeight - closeButtonReserveHeight
+        let available = size.height - transportReserveHeight
         let byHeight = max(0, available) * 16 / 9
         return min(byWidth, byHeight)
-    }
-
-    // MARK: - Close button
-
-    /// Bottom-bar Close pill. iOS 26 ships `.buttonStyle(.glass)` which renders a real
-    /// glass-material capsule — that's what gives it the visual weight that matches the
-    /// `prominentClearGlass` close button LNPopupUI shows in the popup chrome. Pre-iOS-26
-    /// fallback uses `.bordered` with `.regularMaterial` Capsule background — visually
-    /// close but not the same liquid-glass effect.
-    @ViewBuilder
-    private var closeFullScreenButton: some View {
-        let label = Label("Close", systemImage: "chevron.down")
-            .labelStyle(.titleAndIcon)
-            .font(.body.weight(.semibold))
-            .padding(.horizontal, 24)
-            .padding(.vertical, 10)
-
-        if #available(iOS 26.0, *) {
-            Button {
-                @Bindable var p = player
-                p.fullScreenPresented = false
-            } label: {
-                label
-            }
-            .buttonStyle(.glass)
-            .controlSize(.large)
-            .tint(.primary)
-            .accessibilityLabel("Close full screen player")
-        } else {
-            Button {
-                @Bindable var p = player
-                p.fullScreenPresented = false
-            } label: {
-                label
-                    .background(.regularMaterial, in: Capsule())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Close full screen player")
-        }
     }
 
     // MARK: - Lower section: panel vs channel-push
@@ -314,6 +278,30 @@ struct FullScreenPlayer: View {
                 }
             }
             .padding(.vertical)
+        }
+        .scrollContentBackground(.hidden)
+    }
+
+    /// Side-by-side left column under the transport row: title, channel, description and
+    /// comments, scrolling independently of the Up next column.
+    @ViewBuilder
+    private func infoAndComments(_ video: Video) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                metadata(video)
+                detailsSection(video: video)
+                CommentsSection(videoID: video.id)
+            }
+            .padding(.vertical)
+        }
+        .scrollContentBackground(.hidden)
+    }
+
+    /// Side-by-side right column: the Up next queue on its own.
+    private var upNextColumn: some View {
+        ScrollView {
+            queuePanel
+                .padding(.vertical)
         }
         .scrollContentBackground(.hidden)
     }
@@ -345,16 +333,6 @@ struct FullScreenPlayer: View {
                 // while the panel-mode comments/queue area keeps the popup's outer thinMaterial.
                 .background {
                     Color.black.ignoresSafeArea()
-                }
-                // Reserve room for the player's outer bottom Close button so the last
-                // ChannelScreen row isn't hidden behind the glass capsule. The outer
-                // `.safeAreaInset(edge: .bottom)` (line ~193) reserves it on the outermost
-                // container, but the NavigationStack inside `channelStack` creates a fresh
-                // UIHostingController whose internal `List` ignores that ancestor inset
-                // — same propagation gap the playback-queue panel hit. Mirroring the inset
-                // here lifts the List's content above the Close button.
-                .safeAreaInset(edge: .bottom) {
-                    Color.clear.frame(height: Self.closeButtonReserveHeight)
                 }
 
             Button {
@@ -566,144 +544,75 @@ struct FullScreenPlayer: View {
 
     // MARK: - Transport
 
-    @ViewBuilder
-    private var transportRow: some View {
-        // Flexible `Spacer()`s on both outer ends AND between every adjacent pair so every gap
-        // — edge-to-button and button-to-button — sizes itself to the same width. Keeps the
-        // optical rhythm even across device widths instead of the previous mixed model (fixed
-        // 24pt between the 5 center buttons + flexible to the side buttons).
+    /// Row under the video: the video's actions (Like, Save, Copy URL) and — stacked layout only —
+    /// the queue / comments toggle. Play/pause, seeking and close live on the video itself
+    /// (`PlayerControlsOverlay`), so they aren't repeated here;
+    /// previous / next are covered by the Up next list and the lock-screen remote.
+    ///
+    /// `showsPanelToggle`: the queue / comments switch only matters in the stacked layout, where
+    /// the two share one panel; side by side both are always visible.
+    private func transportRow(showsPanelToggle: Bool) -> some View {
+        // Each button takes an equal-width slot, so the row reads as evenly spaced and centered
+        // whether it holds one action (signed out) or four (signed in + queue toggle).
         HStack(spacing: 0) {
-            Spacer(minLength: 0)
-
-            moreActionsMenu
-
-            Spacer(minLength: 0)
-
-            Button { player.playPrevious() } label: {
-                Image(systemName: "backward.fill").font(.title3)
-            }
-            .disabled(!hasPrevious)
-
-            Spacer(minLength: 0)
-
-            Button { player.seekRelative(by: -15) } label: {
-                Image(systemName: "gobackward.15").font(.title3)
-            }
-
-            Spacer(minLength: 0)
-
-            Button { player.togglePlayPause() } label: {
-                Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                    .font(.system(size: 48))
-            }
-
-            Spacer(minLength: 0)
-
-            Button { player.seekRelative(by: 15) } label: {
-                Image(systemName: "goforward.15").font(.title3)
-            }
-
-            Spacer(minLength: 0)
-
-            Button { player.playNext() } label: {
-                Image(systemName: "forward.fill").font(.title3)
-            }
-            .disabled(!hasNext)
-
-            Spacer(minLength: 0)
-
-            queueToggleButton
-
-            Spacer(minLength: 0)
-        }
-        .buttonStyle(.plain)
-        .padding(.horizontal, 12)
-    }
-
-    private var hasPrevious: Bool {
-        guard let current = player.queue.current else { return false }
-        return player.queue.items.firstIndex(of: current).map { $0 > 0 } ?? false
-    }
-
-    private var hasNext: Bool {
-        guard let current = player.queue.current else { return false }
-        return player.queue.items.firstIndex(of: current).map { $0 + 1 < player.queue.items.count } ?? false
-    }
-
-    // MARK: - More-actions menu (three dots)
-
-    @ViewBuilder
-    private var moreActionsMenu: some View {
-        Menu {
             if let video = player.currentVideo {
-                Button {
-                    if let url = watchURL(video) {
-                        UIApplication.shared.open(url)
+                if isSignedIn {
+                    actionButton("Like", systemImage: isFavorite(video) ? "hand.thumbsup.fill" : "hand.thumbsup") {
+                        toggleFavorite(video)
                     }
-                } label: {
-                    Label("Open in browser", systemImage: "safari")
-                }
-                // System "Open in…" share sheet for the downloaded mp4 — only shown when the file
-                // is already on disk. We avoid `ShareLink` here because for `file://` URLs inside
-                // a `Menu` it sometimes serializes the URL as text and the share sheet doesn't
-                // show the apps that handle the mp4 UTType. Going through `UIActivityViewController`
-                // directly is the reliable path for file activity items.
-                if let localFile = DownloadManager.shared.localFile(for: video.id) {
-                    Button {
-                        shareFileURL = localFile
-                    } label: {
-                        Label("Open in…", systemImage: "square.and.arrow.up")
+                    actionButton("Save", systemImage: "text.badge.plus") {
+                        addToPlaylistVideo = video
                     }
                 }
-                Button {
+                actionButton(
+                    showsCopied ? "Copied" : "Copy URL",
+                    systemImage: showsCopied ? "checkmark" : "link"
+                ) {
                     if let url = watchURL(video) {
                         UIPasteboard.general.string = url.absoluteString
-                    }
-                } label: {
-                    Label("Copy URL", systemImage: "link")
-                }
-                Button {
-                    UIPasteboard.general.string = watchURLAtCurrentTime(video).absoluteString
-                } label: {
-                    Label("Copy URL at current time", systemImage: "clock")
-                }
-                // Favorites + add-to-playlist are auth-gated. When signed out, both actions
-                // are hidden — the YouTube endpoints they call would just throw
-                // `.notAuthenticated` and the user would see a useless error toast.
-                if isSignedIn {
-                    Divider()
-                    Button {
-                        toggleFavorite(video)
-                    } label: {
-                        if isFavorite(video) {
-                            Label("Remove from favorites", systemImage: "hand.thumbsup.fill")
-                        } else {
-                            Label("Add to favorites", systemImage: "hand.thumbsup")
-                        }
-                    }
-                    Button {
-                        addToPlaylistVideo = video
-                    } label: {
-                        Label("Add to playlist", systemImage: "text.badge.plus")
-                    }
-                }
-                if DownloadManager.shared.localFile(for: video.id) != nil {
-                    Divider()
-                    Button(role: .destructive) {
-                        DownloadManager.shared.deleteDownloaded(videoID: video.id, context: modelContext)
-                    } label: {
-                        Label("Remove downloaded file", systemImage: "trash")
+                        flashCopied()
                     }
                 }
             }
-        } label: {
-            Image(systemName: "ellipsis.circle")
-                .font(.title2)
+            if showsPanelToggle {
+                queueToggleButton
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 16)
+    }
+
+    // MARK: - Actions
+
+    /// Like and Save are auth-gated in `transportRow` — signed out, the YouTube endpoints they
+    /// call would just throw `.notAuthenticated`.
+    private func actionButton(
+        _ title: LocalizedStringKey,
+        systemImage: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.subheadline.weight(.medium))
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, minHeight: 36)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Swaps Copy URL to "Copied ✓" for a moment so the copy is visibly confirmed.
+    private func flashCopied() {
+        withAnimation(.snappy) { showsCopied = true }
+        Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            withAnimation(.snappy) { showsCopied = false }
         }
     }
 
     /// True when `AuthState` reports a logged-in session. Drives auth-gated visibility of the
-    /// "Add to favorites" and "Add to playlist" menu items.
+    /// Like and Save chips.
     private var isSignedIn: Bool {
         if case .loggedIn = AuthState.shared.status { return true }
         return false
@@ -713,12 +622,6 @@ struct FullScreenPlayer: View {
         URL(string: "https://www.youtube.com/watch?v=\(video.id)")
     }
 
-    /// `youtu.be/<id>?t=<seconds>` is the canonical share-with-timestamp URL YouTube understands.
-    private func watchURLAtCurrentTime(_ video: Video) -> URL {
-        let seconds = Int(player.elapsed)
-        return URL(string: "https://youtu.be/\(video.id)?t=\(seconds)")
-            ?? URL(string: "https://youtu.be/\(video.id)")!
-    }
 
     /// O(N) check against the already-loaded `favorites` array — no Core Data per call. With
     /// reasonable favorite counts this is effectively free, and avoids the per-menu-render SQL hit
@@ -771,9 +674,7 @@ struct FullScreenPlayer: View {
 
     @ViewBuilder
     private var queueToggleButton: some View {
-        // Apple Music style: when active, draw a soft capsule highlight behind the icon. We
-        // intentionally do NOT recolor the glyph itself — the user's eye is drawn by the
-        // capsule shape, the icon stays the same color so it doesn't look like a different button.
+        // Active state is the accent-colored glyph — no capsule highlight behind it.
         Button {
             withAnimation(.snappy) {
                 panel = (panel == .queue) ? .comments : .queue
@@ -781,13 +682,9 @@ struct FullScreenPlayer: View {
         } label: {
             Image(systemName: "list.bullet")
                 .font(.title3.weight(.semibold))
-                .foregroundStyle(Color.primary)
-                .frame(width: 44, height: 28)
-                .background {
-                    if panel == .queue {
-                        Capsule().fill(.ultraThinMaterial)
-                    }
-                }
+                .foregroundStyle(panel == .queue ? Color.accentColor : Color.primary)
+                .frame(width: 44, height: 36)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -846,12 +743,6 @@ struct FullScreenPlayer: View {
     /// occupies 64pt of vertical space in the List.
     private static let queueRowHeight: CGFloat = 56
 
-    /// Approximate bottom footprint of the player's Close button (label vertical padding +
-    /// glass-button chrome + the wrapping HStack's `.padding(.bottom, 8)`). Used to inset
-    /// any pushed channel/playlist content via `.safeAreaInset(edge: .bottom)` so the last
-    /// row isn't hidden behind the close pill. SwiftUI adds the home-indicator safe area
-    /// on top of this automatically — we only need to reserve the button height itself.
-    private static let closeButtonReserveHeight: CGFloat = 56
     /// Per-row footprint including insets, used by `queueListHeight` below.
     private static let queueRowFootprint: CGFloat = queueRowHeight + 8 // 4pt top + 4pt bottom insets
 

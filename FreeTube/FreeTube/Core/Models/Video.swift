@@ -24,7 +24,7 @@ struct Video: Identifiable, Hashable, Sendable {
 extension Video {
     /// Forwarding initializer that defaults `publishedRelative` to nil. Keeps the dozen
     /// existing call sites that construct `Video` literally (in VideoService, PlaybackResolver,
-    /// LibraryScreen, DownloadsScreen, etc.) compiling without each one being touched — only
+    /// LibraryScreen, etc.) compiling without each one being touched — only
     /// places that have a real value (Mappers, channel/playlist backfill) need to pass it.
     init(
         id: String,

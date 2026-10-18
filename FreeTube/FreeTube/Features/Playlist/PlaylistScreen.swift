@@ -5,7 +5,7 @@ import Kingfisher
 /// Playlist detail screen. Top-down layout:
 ///   1. Large playlist artwork
 ///   2. Title + channel + video-count metadata
-///   3. Glass-pill action toolbar — Play all / Shuffle all / Download all + More menu
+///   3. Glass-pill action toolbar — Play all / Shuffle all + More menu
 ///   4. List of videos
 ///
 /// Edit mode + the swipe-to-delete / drag-to-reorder handlers were removed: most playlists
@@ -293,9 +293,6 @@ struct PlaylistScreen: View {
                     player.load(first, skipRecommendations: true)
                 }
             }
-            glassPill(title: "Download", systemImage: "arrow.down.circle.fill") {
-                enqueueAllDownloads(details.videos)
-            }
             Spacer(minLength: 0)
             moreMenu(details)
         }
@@ -398,24 +395,6 @@ struct PlaylistScreen: View {
     }
 
     // MARK: - Actions
-
-    /// Fires off `ensureDownloaded` for every playlist video **in parallel**, fire-and-forget,
-    /// so each one gets added to the Downloads queue (DownloadManager.tasks) immediately and the
-    /// user sees the whole playlist appear in the Downloads tab. The actual yt-dlp work still
-    /// runs serially behind `PythonRunner`'s FIFO, but the queue list reflects everything that
-    /// needs to happen, which is what the user wants to see.
-    ///
-    /// Sequential `await`-in-a-loop (the previous implementation) only enqueued the next item
-    /// after the previous finished, so the UI made it look like the Download All button was
-    /// downloading one track and ignoring the rest.
-    private func enqueueAllDownloads(_ videos: [Video]) {
-        let quality = UserPreferences().preferredQuality
-        for video in videos {
-            Task {
-                _ = try? await DownloadManager.shared.ensureDownloaded(video: video, quality: quality)
-            }
-        }
-    }
 
     private func toggleFavorite(playlist: Playlist, isFavorite: Bool) {
         if isFavorite {

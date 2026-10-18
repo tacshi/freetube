@@ -9,10 +9,9 @@ enum PersistenceController {
     static let log = AppLog(subsystem: "com.leshko.freetube", category: "Persistence")
 
     static let sharedContainer: ModelContainer = {
-        // Downloads moved to file-system + xattr storage (`DownloadsStore`) — no `DownloadedVideo`
-        // model registered here anymore. Existing installs with stale `DownloadedVideo` tables in
-        // the on-disk SQLite store are left untouched; SwiftData ignores tables for models that
-        // aren't in the active schema.
+        // Older installs may still have a `DownloadedVideo` table in the on-disk SQLite store
+        // from when the app downloaded videos; SwiftData ignores tables for models that aren't
+        // in the active schema, so it's left untouched.
         let schema = Schema([
             WatchHistoryEntry.self,
             SearchHistoryEntry.self,

@@ -7,7 +7,7 @@ import Kingfisher
 /// and no horizontal padding, because the grid supplies the gutters between tiles.
 ///
 /// Set `showsMoreMenu: true` to render the trailing ellipsis Menu (open in browser, copy URL,
-/// favorites, add to playlist, downloads) on the metadata row. The Menu sits as a sibling of
+/// favorites, add to playlist) on the metadata row. The Menu sits as a sibling of
 /// the card's main tap target so its taps don't trigger `onTap`.
 @available(iOS 17.0, *)
 struct VideoCard: View {

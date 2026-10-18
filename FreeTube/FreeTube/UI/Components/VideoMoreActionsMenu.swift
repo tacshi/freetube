@@ -5,15 +5,13 @@ import OSLog
 
 /// Reusable trailing ellipsis Menu for `Video` items. Used by search results, history,
 /// the playback queue, and anywhere else a video appears in a list. Owns its own favorites
-/// `@Query`, share-file sheet, and add-to-playlist sheet so callers just drop it in next to
+/// `@Query` and add-to-playlist sheet so callers just drop it in next to
 /// the row's main tap target.
 ///
 /// Auth-gating rules (per product spec):
 ///   - Open in browser, Copy URL: always shown
-///   - Open in… : shown only when the video has a local downloaded file
 ///   - Add to favorites / Remove from favorites: shown only when signed in
 ///   - Add to playlist: shown only when signed in
-///   - Remove downloaded file: shown only when the video has a local downloaded file
 @available(iOS 17.0, *)
 struct VideoMoreActionsMenu: View {
     let video: Video
@@ -21,7 +19,6 @@ struct VideoMoreActionsMenu: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var favorites: [FavoriteVideo]
 
-    @State private var shareFileURL: URL?
     @State private var addToPlaylistVideo: Video?
 
     var body: some View {
@@ -35,17 +32,6 @@ struct VideoMoreActionsMenu: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        // Same UIActivityViewController bridge the full-screen player uses for "Open in…".
-        // ShareLink would serialize `file://` URLs as plain text inside a Menu and lose the
-        // mp4 UTType, so the system share sheet wouldn't show the apps that can handle it.
-        .sheet(isPresented: Binding(
-            get: { shareFileURL != nil },
-            set: { if !$0 { shareFileURL = nil } }
-        )) {
-            if let url = shareFileURL {
-                ActivityShareSheet(activityItems: [url])
-            }
-        }
         .sheet(item: $addToPlaylistVideo) { video in
             AddToPlaylistSheet(videoID: video.id, videoTitle: video.title)
         }
@@ -57,13 +43,6 @@ struct VideoMoreActionsMenu: View {
             if let url = watchURL { UIApplication.shared.open(url) }
         } label: {
             Label("Open in browser", systemImage: "safari")
-        }
-        if let localFile = DownloadManager.shared.localFile(for: video.id) {
-            Button {
-                shareFileURL = localFile
-            } label: {
-                Label("Open in…", systemImage: "square.and.arrow.up")
-            }
         }
         Button {
             if let url = watchURL { UIPasteboard.general.string = url.absoluteString }
@@ -85,14 +64,6 @@ struct VideoMoreActionsMenu: View {
                 addToPlaylistVideo = video
             } label: {
                 Label("Add to playlist", systemImage: "text.badge.plus")
-            }
-        }
-        if DownloadManager.shared.localFile(for: video.id) != nil {
-            Divider()
-            Button(role: .destructive) {
-                DownloadManager.shared.deleteDownloaded(videoID: video.id, context: modelContext)
-            } label: {
-                Label("Remove downloaded file", systemImage: "trash")
             }
         }
     }

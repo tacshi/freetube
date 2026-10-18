@@ -10,8 +10,7 @@ import SwiftData
 /// still pick up changes automatically once `save()` lands (SwiftData propagates persistent-store
 /// notifications back to the main context).
 ///
-/// **What's serialized here:** WatchHistory, FavoriteVideo, SearchHistory writes. (Downloads
-/// moved to file-system + xattr storage in `DownloadsStore` — no SwiftData involved.)
+/// **What's serialized here:** WatchHistory (incl. playback position), FavoriteVideo, SearchHistory writes.
 /// Reads (favorite lookup, recent history, etc.) still go through SwiftUI `@Query` or the main
 /// context — those are reactive and indexed.
 @available(iOS 17.0, *)
@@ -46,4 +45,28 @@ actor PersistenceWriter {
         try? modelContext.save()
     }
 
+    // MARK: - Playback position
+
+    /// Records how far into `videoID` playback got, on the row `upsertWatchHistory` created when
+    /// the video was opened. No-op when there's no row (nothing to resume into).
+    func savePlaybackPosition(videoID: String, position: TimeInterval, duration: TimeInterval) {
+        let target = videoID
+        let descriptor = FetchDescriptor<WatchHistoryEntry>(predicate: #Predicate { $0.videoID == target })
+        guard let entry = try? modelContext.fetch(descriptor).first else { return }
+        entry.lastPosition = position
+        if duration > 0 { entry.duration = duration }
+        try? modelContext.save()
+    }
+
+    /// Where to resume `videoID`, or nil to start from the beginning: never played, stopped in
+    /// the first few seconds, or watched to (nearly) the end — like YouTube, a finished video
+    /// starts over.
+    func resumePosition(videoID: String) -> TimeInterval? {
+        let target = videoID
+        let descriptor = FetchDescriptor<WatchHistoryEntry>(predicate: #Predicate { $0.videoID == target })
+        guard let entry = try? modelContext.fetch(descriptor).first,
+              entry.lastPosition >= 5 else { return nil }
+        if entry.duration > 0, entry.lastPosition >= entry.duration - 10 { return nil }
+        return entry.lastPosition
+    }
 }

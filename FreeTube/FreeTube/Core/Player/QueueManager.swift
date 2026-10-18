@@ -74,48 +74,6 @@ final class QueueManager {
 
     // MARK: - Navigation
 
-    /// Peeks at the next `count` videos that would play after the current one, honoring shuffle and
-    /// `.all` wrap-around. Used by the player's prefetch loop so we can warm up the next couple of
-    /// downloads while the current one plays. `.one` repeat returns no upcoming items (it just
-    /// replays the current).
-    func upcomingItems(count: Int) -> [Video] {
-        guard count > 0, !items.isEmpty, repeatMode != .one else { return [] }
-
-        if isShuffleOn {
-            guard let position = shuffleOrder.firstIndex(of: currentIndex) else { return [] }
-            var result: [Video] = []
-            var idx = position + 1
-            while result.count < count {
-                if shuffleOrder.indices.contains(idx) {
-                    if let v = items[safe: shuffleOrder[idx]] { result.append(v) }
-                    idx += 1
-                } else if repeatMode == .all, let first = shuffleOrder.first {
-                    if let v = items[safe: first] { result.append(v) }
-                    idx = 1
-                    if result.count >= shuffleOrder.count { break }
-                } else {
-                    break
-                }
-            }
-            return result
-        }
-
-        var result: [Video] = []
-        var idx = currentIndex + 1
-        while result.count < count {
-            if items.indices.contains(idx) {
-                result.append(items[idx])
-                idx += 1
-            } else if repeatMode == .all, !items.isEmpty {
-                idx = 0
-                if result.count >= items.count { break }
-            } else {
-                break
-            }
-        }
-        return result
-    }
-
     func advance() -> Video? {
         switch repeatMode {
         case .one:
