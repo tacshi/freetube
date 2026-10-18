@@ -19,6 +19,16 @@ final class CookieStore {
         "APISID"
     ]
 
+    /// Required names absent from the YouTube/Google-scoped subset of `cookies`, sorted. Same
+    /// scope filter as `makeHeader`, but allocation-light and log-free so the login flow can
+    /// call it on every cookie-store change and only build the header once the set is complete.
+    static func missingRequiredNames(in cookies: [HTTPCookie]) -> [String] {
+        let present = Set(cookies.lazy
+            .filter { $0.domain.hasSuffix("youtube.com") || $0.domain.hasSuffix(".google.com") }
+            .map(\.name))
+        return requiredCookieNames.subtracting(present).sorted()
+    }
+
     private let log = AppLog(subsystem: "com.leshko.freetube", category: "CookieStore")
 
     private init() {}

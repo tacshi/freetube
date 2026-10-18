@@ -6291,6 +6291,40 @@
         }
       }
     },
+    "Signed in, but YouTube didn't issue the session cookies (missing: %@). Please try again." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Angemeldet, aber YouTube hat die Sitzungs-Cookies nicht ausgegeben (fehlend: %@). Bitte versuche es erneut."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signed in, but YouTube didn't issue the session cookies (missing: %@). Please try again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sesión iniciada, pero YouTube no emitió las cookies de sesión (faltan: %@). Inténtalo de nuevo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connecté, mais YouTube n'a pas fourni les cookies de session (manquants : %@). Veuillez réessayer."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вход выполнен, но YouTube не выдал cookie сеанса (отсутствуют: %@). Попробуйте ещё раз."
+          }
+        }
+      }
+    },
     "Skip Backward 15s" : {
       "localizations" : {
         "de" : {
