@@ -15,10 +15,10 @@ struct FullScreenPlayer: View {
     /// every redraw (per-row SQL on the main queue otherwise).
     @Query private var favorites: [FavoriteVideo]
 
-    /// What's shown in the lower panel. Default is `.queue` so the user can see what's coming up
-    /// without an extra tap; they can switch to `.comments` via the toggle on the right of the
-    /// transport row.
-    @State private var panel: Panel = .queue
+    /// What's shown in the lower panel of the stacked layout. Default is `.comments`, matching the
+    /// side-by-side layout where comments are always visible; the "Up next" button on the right of
+    /// the transport row switches to the queue.
+    @State private var panel: Panel = .comments
     /// Async-loaded description / details for the currently-playing video. Fetched on demand when
     /// the user taps "More" under the channel row.
     @State private var details: VideoInfo?
@@ -621,8 +621,7 @@ struct FullScreenPlayer: View {
                 }
             }
             if showsPanelToggle {
-                queueToggleButton
-                    .frame(maxWidth: .infinity)
+                panelSwitchButton
             }
         }
         .buttonStyle(.plain)
@@ -716,23 +715,20 @@ struct FullScreenPlayer: View {
         }
     }
 
-    // MARK: - Queue toggle (right of transport)
+    // MARK: - Panel switch (right of transport)
 
-    @ViewBuilder
-    private var queueToggleButton: some View {
-        // Active state is the accent-colored glyph — no capsule highlight behind it.
-        Button {
+    /// Stacked layout only: switches the lower panel between Up next and comments. Labeled with
+    /// where it goes ("Comments" / "Up next"), styled like the other actions, so the comments
+    /// panel is visibly one tap away instead of hiding behind a bare list glyph.
+    private var panelSwitchButton: some View {
+        actionButton(
+            panel == .queue ? "Comments" : "Up next",
+            systemImage: panel == .queue ? "text.bubble" : "list.bullet"
+        ) {
             withAnimation(.snappy) {
                 panel = (panel == .queue) ? .comments : .queue
             }
-        } label: {
-            Image(systemName: "list.bullet")
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(panel == .queue ? Color.accentColor : Color.primary)
-                .frame(width: 44, height: 36)
-                .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
     }
 
     // MARK: - Queue controls (shuffle + repeat)
