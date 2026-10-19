@@ -29,7 +29,14 @@ final class PlayerStateManager {
     /// than the SwiftUI `Image`. Refreshed when the current video changes.
     private(set) var currentArtwork: UIImage?
     private(set) var loadState: LoadState = .idle
-    private(set) var isPlaying: Bool = false
+    /// Also keeps the screen from dimming and auto-locking while a video plays, like the YouTube
+    /// app; pausing or stopping hands the idle timer back to iOS.
+    private(set) var isPlaying: Bool = false {
+        didSet {
+            guard isPlaying != oldValue else { return }
+            UIApplication.shared.isIdleTimerDisabled = isPlaying
+        }
+    }
     private(set) var elapsed: TimeInterval = 0
     private(set) var duration: TimeInterval = 0
     /// Drives the full-screen player cover in `RootView`. `load(_:)` sets it; closing the
