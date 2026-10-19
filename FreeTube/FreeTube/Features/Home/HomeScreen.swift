@@ -53,7 +53,9 @@ struct HomeScreen: View {
                     }
                 }
             }
-            .navigationTitle("Home")
+            // No title: the tab bar already says Home. Inline mode keeps the bar compact (it
+            // still hosts the search field) instead of reserving large-title space.
+            .navigationBarTitleDisplayMode(.inline)
             .modifier(ConditionalSearchable(
                 text: $searchModel.query,
                 enabled: !MacIntegration.isRunningOnMac,
