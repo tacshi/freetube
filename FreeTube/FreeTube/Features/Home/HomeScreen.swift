@@ -131,16 +131,24 @@ struct HomeScreen: View {
                 }
 
                 ForEach(section.videos) { video in
-                    VideoCard(video: video, onTap: { player.load(video) }, showsMoreMenu: true)
-                        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 12, trailing: 0))
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-                        .onAppear {
-                            guard section.id == model.sections.last?.id else { return }
-                            guard section.videos.suffix(5).contains(where: { $0.id == video.id }) else { return }
-                            guard model.continuationToken != nil, !model.isLoading else { return }
-                            Task { await model.loadMore() }
+                    Group {
+                        if model.removedVideoIDs.contains(video.id) {
+                            RemovedVideoPlaceholder {
+                                Task { await model.undoNotInterested(video) }
+                            }
+                        } else {
+                            VideoCard(video: video, onTap: { player.load(video) }, showsMoreMenu: true)
                         }
+                    }
+                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 12, trailing: 0))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .onAppear {
+                        guard section.id == model.sections.last?.id else { return }
+                        guard section.videos.suffix(5).contains(where: { $0.id == video.id }) else { return }
+                        guard model.continuationToken != nil, !model.isLoading else { return }
+                        Task { await model.loadMore() }
+                    }
                 }
             }
 
@@ -152,6 +160,16 @@ struct HomeScreen: View {
             }
         }
         .listStyle(.plain)
+        .environment(\.notInterestedAction, notInterestedAction)
+    }
+
+    /// "Not interested" in the home feed's ⋯ menus. Only the feed sets it, so the search
+    /// results sharing this screen don't offer it.
+    private var notInterestedAction: NotInterestedAction {
+        NotInterestedAction(
+            isAvailable: { model.canMarkNotInterested($0) },
+            perform: { video in Task { await model.markNotInterested(video) } }
+        )
     }
 
     /// Regular-width feed: recent searches as a row of chips, then each feed section as a
@@ -185,7 +203,9 @@ struct HomeScreen: View {
                                 guard section.videos.suffix(5).contains(where: { $0.id == video.id }) else { return }
                                 guard model.continuationToken != nil, !model.isLoading else { return }
                                 Task { await model.loadMore() }
-                            }
+                            },
+                            removedVideoIDs: model.removedVideoIDs,
+                            onUndoRemove: { video in Task { await model.undoNotInterested(video) } }
                         )
                         .padding(.horizontal)
                     }
@@ -197,6 +217,7 @@ struct HomeScreen: View {
             }
             .padding(.vertical)
         }
+        .environment(\.notInterestedAction, notInterestedAction)
     }
 
     /// Regular-width counterpart of `recentSearchesSection`: a horizontally scrolling row of

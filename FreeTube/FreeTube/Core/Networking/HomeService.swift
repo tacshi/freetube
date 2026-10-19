@@ -9,6 +9,8 @@ protocol HomeServicing: Sendable {
 }
 
 /// Wraps YouTubeKit's `HomeScreenResponse` (+Continuation) and `TrendingVideosResponse`.
+/// Home pages are requested as `HomeScreenFeedbackResponse`, the same request decoded by
+/// YouTubeKit plus each video's "Not interested" token.
 final class HomeService: HomeServicing {
     private let client: YouTubeKitClient
     private let log = AppLog(subsystem: "com.leshko.freetube", category: "HomeService")
@@ -20,14 +22,18 @@ final class HomeService: HomeServicing {
     func fetchHome() async throws -> HomeFeed {
         log.info("Fetching home feed")
         do {
-            let response = try await HomeScreenResponse.sendThrowingRequest(
+            let response = try await HomeScreenFeedbackResponse.sendThrowingRequest(
                 youtubeModel: client.model,
                 data: [:]
             )
-            let videos = response.results.map(Mappers.video(from:))
+            let videos = response.page.results.map(Mappers.video(from:))
             if !videos.isEmpty {
                 let section = HomeFeedSection(id: "home", title: nil, videos: videos)
-                return HomeFeed(sections: [section], continuationToken: response.continuationToken)
+                return HomeFeed(
+                    sections: [section],
+                    continuationToken: response.page.continuationToken,
+                    feedback: response.feedback
+                )
             }
             // YouTube returns an empty home feed for anonymous users (no cookies). We don't want
             // the user staring at a blank tab in that case, so fall back to a curated discovery
@@ -80,13 +86,17 @@ final class HomeService: HomeServicing {
     func fetchMore(continuation: String) async throws -> HomeFeed {
         log.info("Fetching home continuation")
         do {
-            let response = try await HomeScreenResponse.Continuation.sendThrowingRequest(
+            let response = try await HomeScreenFeedbackResponse.Continuation.sendThrowingRequest(
                 youtubeModel: client.model,
                 data: [.continuation: continuation]
             )
-            let videos = response.results.map(Mappers.video(from:))
+            let videos = response.page.results.map(Mappers.video(from:))
             let section = HomeFeedSection(id: "home-cont-\(UUID().uuidString)", title: nil, videos: videos)
-            return HomeFeed(sections: [section], continuationToken: response.continuationToken)
+            return HomeFeed(
+                sections: [section],
+                continuationToken: response.page.continuationToken,
+                feedback: response.feedback
+            )
         } catch {
             throw YouTubeServiceError.network(error)
         }

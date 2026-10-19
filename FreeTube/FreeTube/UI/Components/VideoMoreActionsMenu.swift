@@ -12,11 +12,14 @@ import OSLog
 ///   - Open in browser, Copy URL: always shown
 ///   - Add to favorites / Remove from favorites: shown only when signed in
 ///   - Add to playlist: shown only when signed in
+///   - Not interested: shown only where the hosting feed set `notInterestedAction` and YouTube
+///     offered it for this video (signed-in home feed)
 @available(iOS 17.0, *)
 struct VideoMoreActionsMenu: View {
     let video: Video
 
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.notInterestedAction) private var notInterestedAction
     @Query private var favorites: [FavoriteVideo]
 
     @State private var addToPlaylistVideo: Video?
@@ -64,6 +67,14 @@ struct VideoMoreActionsMenu: View {
                 addToPlaylistVideo = video
             } label: {
                 Label("Add to playlist", systemImage: "text.badge.plus")
+            }
+        }
+        if let notInterestedAction, notInterestedAction.isAvailable(video) {
+            Divider()
+            Button {
+                notInterestedAction.perform(video)
+            } label: {
+                Label("Not interested", systemImage: "nosign")
             }
         }
     }

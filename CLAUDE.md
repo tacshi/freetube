@@ -118,7 +118,7 @@ Every YouTubeKit response type gets exactly one service method. Do not call `You
 
 | Response | Service method |
 |---|---|
-| `HomeScreenResponse` (+Continuation) | `HomeService.fetchHome()` / `fetchMore()` |
+| `HomeScreenResponse` (+Continuation), requested as our `HomeScreenFeedbackResponse` (+Continuation): same request, plus each video's "Not interested" / undo tokens | `HomeService.fetchHome()` / `fetchMore()` |
 | `TrendingVideosResponse` | `HomeService.fetchTrending()` |
 | `SearchResponse` (+Continuation, +Restricted) | `SearchService.search(query:restricted:)` / `fetchMore()` |
 | `AutoCompletionResponse` | `SearchService.autocomplete(query:)` |
@@ -133,6 +133,7 @@ Every YouTubeKit response type gets exactly one service method. Do not call `You
 | `AccountSubscriptionsFeedResponse` | `SubscriptionService.fetchFeed()` |
 | `AccountSubscriptionsResponse` | `SubscriptionService.fetchSubscriptions()` |
 | `HistoryResponse` / `RemoveVideoFromHistroryResponse` | `HistoryService.fetch()` / `remove(videoID:)` |
+| `FeedbackResponse` (ours: YouTube's `/feedback` request, borrowed from `RemoveVideoFromHistroryResponse`) | `FeedbackService.send(token:)` ("Not interested" and its Undo) |
 | `SubscribeChannelResponse` / `UnsubscribeChannelResponse` | `SubscriptionService.subscribe(channelID:)` / `unsubscribe(channelID:)` |
 | `AllPossibleHostPlaylistsResponse` | `PlaylistService.fetchHostablePlaylists(videoID:)` |
 | `AddVideoToPlaylistResponse` / `RemoveVideoByIdFromPlaylistResponse` / `RemoveVideoFromPlaylistResponse` | `PlaylistService.add/remove*` |

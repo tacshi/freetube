@@ -18,16 +18,25 @@ struct VideoTileGrid: View {
     var showsMoreMenu: Bool = true
     let onPlay: (Video) -> Void
     var onItemAppear: (Video) -> Void = { _ in }
+    /// Videos marked "Not interested": drawn as a `RemovedVideoPlaceholder` with Undo.
+    var removedVideoIDs: Set<String> = []
+    var onUndoRemove: (Video) -> Void = { _ in }
 
     var body: some View {
         LazyVGrid(columns: Self.columns, alignment: .leading, spacing: 24) {
             ForEach(videos) { video in
-                VideoCard(
-                    video: video,
-                    onTap: { onPlay(video) },
-                    showsMoreMenu: showsMoreMenu,
-                    layout: .tile
-                )
+                Group {
+                    if removedVideoIDs.contains(video.id) {
+                        RemovedVideoPlaceholder(layout: .tile) { onUndoRemove(video) }
+                    } else {
+                        VideoCard(
+                            video: video,
+                            onTap: { onPlay(video) },
+                            showsMoreMenu: showsMoreMenu,
+                            layout: .tile
+                        )
+                    }
+                }
                 .onAppear { onItemAppear(video) }
             }
         }
