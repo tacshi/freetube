@@ -4,14 +4,12 @@ import YouTubeKit
 
 protocol CommentServicing: Sendable {
     func fetchComments(videoID: String, continuation: String?) async throws -> CommentThread
-    func fetchReplies(continuation: String) async throws -> CommentThread
 
     func create(videoID: String, text: String) async throws -> Comment
     func edit(commentID: String, text: String) async throws -> Comment
     func delete(commentID: String) async throws
 
     func reply(commentID: String, text: String) async throws -> Comment
-    func editReply(replyID: String, text: String) async throws -> Comment
 
     func like(commentID: String) async throws
     func dislike(commentID: String) async throws
@@ -23,7 +21,7 @@ protocol CommentServicing: Sendable {
 
 /// Wraps the comment family:
 /// `CreateCommentResponse`, `EditCommentResponse`, `DeleteCommentResponse`,
-/// `ReplyCommentResponse`, `EditReplyCommandResponse`,
+/// `ReplyCommentResponse`,
 /// `LikeCommentResponse`, `DislikeCommentResponse`, `RemoveLikeCommentResponse`, `RemoveDislikeCommentResponse`,
 /// `CommentTranslationResponse`.
 /// TODO(YouTubeKit): wire each method to its response type. All require cookies.
@@ -72,19 +70,6 @@ final class CommentService: CommentServicing {
         }
     }
 
-    func fetchReplies(continuation: String) async throws -> CommentThread {
-        do {
-            let response = try await VideoCommentsResponse.Continuation.sendThrowingRequest(
-                youtubeModel: client.model,
-                data: [.continuation: continuation]
-            )
-            let comments = response.results.map { Mappers.comment(from: $0) }
-            return CommentThread(comments: comments, continuationToken: response.continuationToken)
-        } catch {
-            throw YouTubeServiceError.network(error)
-        }
-    }
-
     // MARK: - Author-side mutation
 
     func create(videoID: String, text: String) async throws -> Comment {
@@ -101,10 +86,6 @@ final class CommentService: CommentServicing {
     }
 
     func reply(commentID: String, text: String) async throws -> Comment {
-        throw YouTubeServiceError.notAuthenticated
-    }
-
-    func editReply(replyID: String, text: String) async throws -> Comment {
         throw YouTubeServiceError.notAuthenticated
     }
 

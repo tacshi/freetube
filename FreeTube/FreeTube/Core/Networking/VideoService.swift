@@ -12,25 +12,14 @@ struct VideoInfo: Sendable {
     /// The HLS playlist URL (if available). Per `VideoInfosResponse` docs, this URL is consumable by
     /// `AVPlayer` directly. Prefer it over per-format URLs unless a specific quality is required.
     let streamingURL: URL?
-    /// Formats already provided by `VideoInfosResponse` — combined audio+video streams (in `defaultFormats`)
-    /// plus adaptive audio-only/video-only streams (in `downloadFormats`). These come from the iOS-client
-    /// player endpoint and have direct URLs (no signature cipher), so they work without the player-JS scrape
-    /// that `VideoInfosWithDownloadFormatsResponse` requires.
-    let formats: [VideoFormat]
-}
-
-struct VideoInfoWithFormats: Sendable {
-    let info: VideoInfo
-    let formats: [VideoFormat]
 }
 
 protocol VideoServicing: Sendable {
     func fetchInfo(id: String) async throws -> VideoInfo
-    func fetchInfoWithFormats(id: String) async throws -> VideoInfoWithFormats
     func fetchMoreInfo(id: String) async throws -> VideoInfo
 }
 
-/// Wraps `VideoInfosResponse`, `VideoInfosWithDownloadFormatsResponse`, `MoreVideoInfosResponse`.
+/// Wraps `VideoInfosResponse` and `MoreVideoInfosResponse`.
 final class VideoService: VideoServicing {
     private let client: YouTubeKitClient
     private let log = AppLog(subsystem: "com.leshko.freetube", category: "VideoService")
@@ -50,29 +39,12 @@ final class VideoService: VideoServicing {
                 data: [.query: id]
             )
             let info = Self.videoInfo(from: response, id: id, recommended: [])
-            log.info("fetchInfo[IOS] ok id=\(id, privacy: .public) hls=\(info.streamingURL != nil, privacy: .public) formats=\(info.formats.count, privacy: .public)")
+            log.info("fetchInfo[IOS] ok id=\(id, privacy: .public) hls=\(info.streamingURL != nil, privacy: .public)")
             return info
         } catch {
             log.error("fetchInfo[IOS] FAILED id=\(id, privacy: .public): \(String(describing: error), privacy: .public)")
             await Self.clearSessionIfLoginRequired(error)
             throw YouTubeServiceError.network(error)
-        }
-    }
-
-    func fetchInfoWithFormats(id: String) async throws -> VideoInfoWithFormats {
-        log.info("Fetching video info+formats \(id, privacy: .public)")
-        do {
-            let response = try await VideoInfosWithDownloadFormatsResponse.sendThrowingRequest(
-                youtubeModel: client.model,
-                data: [.query: id]
-            )
-            let info = Self.videoInfo(from: response.videoInfos, id: id, recommended: [])
-            let formats = (response.defaultFormats + response.downloadFormats).map(Mappers.format(from:))
-            return VideoInfoWithFormats(info: info, formats: formats)
-        } catch {
-            log.error("VideoInfosWithDownloadFormatsResponse failed: \(String(describing: error), privacy: .public)")
-            await Self.clearSessionIfLoginRequired(error)
-            throw YouTubeServiceError.streamExtractionFailed
         }
     }
 
@@ -106,8 +78,7 @@ final class VideoService: VideoServicing {
                 isLikedByUser: response.authenticatedInfos?.likeStatus == .liked,
                 isDislikedByUser: response.authenticatedInfos?.likeStatus == .disliked,
                 recommended: recommended,
-                streamingURL: nil,
-                formats: []
+                streamingURL: nil
             )
         } catch {
             throw YouTubeServiceError.network(error)
@@ -143,7 +114,6 @@ final class VideoService: VideoServicing {
             isLive: response.isLive ?? false,
             isShort: false
         )
-        let formats = (response.defaultFormats + response.downloadFormats).map(Mappers.format(from:))
         return VideoInfo(
             video: video,
             descriptionText: response.videoDescription,
@@ -151,8 +121,7 @@ final class VideoService: VideoServicing {
             isLikedByUser: false,
             isDislikedByUser: false,
             recommended: recommended,
-            streamingURL: response.streamingURL,
-            formats: formats
+            streamingURL: response.streamingURL
         )
     }
 }

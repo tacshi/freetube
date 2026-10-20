@@ -152,17 +152,6 @@ final class PlayerStateManager {
         installObservers()
     }
 
-    /// Tear-down hook for tests / app lifecycle. Call before releasing the manager. We avoid `deinit`
-    /// here so we don't have to reach into main-actor-isolated state from a nonisolated context.
-    func tearDownObservers() {
-        if let timeObserver { player.removeTimeObserver(timeObserver) }
-        if let captionObserver { player.removeTimeObserver(captionObserver) }
-        if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
-        timeObserver = nil
-        captionObserver = nil
-        endObserver = nil
-    }
-
     // MARK: - Public commands
 
     /// Loads a video for playback.

@@ -27,10 +27,9 @@ struct AccountLibrary: Sendable {
 protocol AccountServicing: Sendable {
     func fetchAccountInfo() async throws -> AccountInfo
     func fetchLibrary() async throws -> AccountLibrary
-    func fetchPlaylists() async throws -> [Playlist]
 }
 
-/// Wraps YouTubeKit's authenticated `Account*Response` types. All three require cookies on
+/// Wraps YouTubeKit's authenticated `Account*Response` types. Both require cookies on
 /// `YouTubeModel`; `SessionManager.bootstrap` / `signIn` is responsible for applying them.
 /// Each method throws `YouTubeServiceError.notAuthenticated` when YouTubeKit reports
 /// `isDisconnected == true` (no valid session) so the UI can route to the login screen.
@@ -120,23 +119,5 @@ final class AccountService: AccountServicing {
             playlists: playlists,
             userChannelID: userChannelID
         )
-    }
-
-    func fetchPlaylists() async throws -> [Playlist] {
-        log.info("Fetching account playlists")
-        let response: AccountPlaylistsResponse
-        do {
-            response = try await AccountPlaylistsResponse.sendThrowingRequest(
-                youtubeModel: client.model,
-                data: [:]
-            )
-        } catch {
-            log.error("AccountPlaylistsResponse failed: \(String(describing: error), privacy: .public)")
-            throw YouTubeServiceError.network(error)
-        }
-        guard !response.isDisconnected else {
-            throw YouTubeServiceError.notAuthenticated
-        }
-        return response.results.map(Mappers.playlist(from:))
     }
 }

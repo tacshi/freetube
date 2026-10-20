@@ -9,8 +9,6 @@
 /* Begin PBXBuildFile section */
 		AC591D782FB9E26E009EE538 /* YouTubeKit in Frameworks */ = {isa = PBXBuildFile; productRef = AC591D772FB9E26E009EE538 /* YouTubeKit */; };
 		AC591DA82FB9E35C009EE538 /* Kingfisher in Frameworks */ = {isa = PBXBuildFile; productRef = AC591DA72FB9E35C009EE538 /* Kingfisher */; };
-		AC591DAB2FB9E36D009EE538 /* KeychainAccess in Frameworks */ = {isa = PBXBuildFile; productRef = AC591DAA2FB9E36D009EE538 /* KeychainAccess */; };
-		AC5924CE2FBB5F2B009EE538 /* SwimplyPlayIndicator in Frameworks */ = {isa = PBXBuildFile; productRef = AC5924CD2FBB5F2B009EE538 /* SwimplyPlayIndicator */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -56,10 +54,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				AC591DAB2FB9E36D009EE538 /* KeychainAccess in Frameworks */,
 				AC591DA82FB9E35C009EE538 /* Kingfisher in Frameworks */,
 				AC591D782FB9E26E009EE538 /* YouTubeKit in Frameworks */,
-				AC5924CE2FBB5F2B009EE538 /* SwimplyPlayIndicator in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -105,8 +101,6 @@
 			packageProductDependencies = (
 				AC591D772FB9E26E009EE538 /* YouTubeKit */,
 				AC591DA72FB9E35C009EE538 /* Kingfisher */,
-				AC591DAA2FB9E36D009EE538 /* KeychainAccess */,
-				AC5924CD2FBB5F2B009EE538 /* SwimplyPlayIndicator */,
 			);
 			productName = FreeTube;
 			productReference = AC591D232FB9BEE5009EE538 /* FreeTube.app */;
@@ -141,8 +135,6 @@
 			packageReferences = (
 				AC591D762FB9E26E009EE538 /* XCRemoteSwiftPackageReference "YouTubeKit" */,
 				AC591DA62FB9E35C009EE538 /* XCRemoteSwiftPackageReference "Kingfisher" */,
-				AC591DA92FB9E36D009EE538 /* XCRemoteSwiftPackageReference "keychainaccess" */,
-				AC5924CC2FBB5F2B009EE538 /* XCRemoteSwiftPackageReference "SwimplyPlayIndicator" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = AC591D242FB9BEE5009EE538 /* Products */;
@@ -425,22 +417,6 @@
 				minimumVersion = 8.9.0;
 			};
 		};
-		AC591DA92FB9E36D009EE538 /* XCRemoteSwiftPackageReference "keychainaccess" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/kishikawakatsumi/keychainaccess";
-			requirement = {
-				branch = master;
-				kind = branch;
-			};
-		};
-		AC5924CC2FBB5F2B009EE538 /* XCRemoteSwiftPackageReference "SwimplyPlayIndicator" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/obrhoff/SwimplyPlayIndicator.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 1.2.0;
-			};
-		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -453,16 +429,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AC591DA62FB9E35C009EE538 /* XCRemoteSwiftPackageReference "Kingfisher" */;
 			productName = Kingfisher;
-		};
-		AC591DAA2FB9E36D009EE538 /* KeychainAccess */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = AC591DA92FB9E36D009EE538 /* XCRemoteSwiftPackageReference "keychainaccess" */;
-			productName = KeychainAccess;
-		};
-		AC5924CD2FBB5F2B009EE538 /* SwimplyPlayIndicator */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = AC5924CC2FBB5F2B009EE538 /* XCRemoteSwiftPackageReference "SwimplyPlayIndicator" */;
-			productName = SwimplyPlayIndicator;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

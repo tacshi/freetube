@@ -36,12 +36,6 @@ final class QueueManager {
         rebuildShuffleOrder()
     }
 
-    func insertNext(_ video: Video) {
-        let insertIndex = min(currentIndex + 1, items.count)
-        items.insert(video, at: insertIndex)
-        rebuildShuffleOrder()
-    }
-
     func remove(at index: Int) {
         guard items.indices.contains(index) else { return }
         items.remove(at: index)

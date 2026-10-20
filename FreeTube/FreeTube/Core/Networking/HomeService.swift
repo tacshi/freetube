@@ -5,10 +5,9 @@ import YouTubeKit
 protocol HomeServicing: Sendable {
     func fetchHome() async throws -> HomeFeed
     func fetchMore(continuation: String) async throws -> HomeFeed
-    func fetchTrending() async throws -> [Video]
 }
 
-/// Wraps YouTubeKit's `HomeScreenResponse` (+Continuation) and `TrendingVideosResponse`.
+/// Wraps YouTubeKit's `HomeScreenResponse` (+Continuation).
 /// Home pages are requested as `HomeScreenFeedbackResponse`, the same request decoded by
 /// YouTubeKit plus each video's "Not interested" token.
 final class HomeService: HomeServicing {
@@ -100,12 +99,5 @@ final class HomeService: HomeServicing {
         } catch {
             throw YouTubeServiceError.network(error)
         }
-    }
-
-    func fetchTrending() async throws -> [Video] {
-        log.info("Fetching trending")
-        // TODO: TrendingVideosResponse — YouTubeKit doesn't ship a dedicated trending response; the
-        // home feed already covers the common case. Returning the home results here is acceptable.
-        return try await fetchHome().sections.flatMap(\.videos)
     }
 }

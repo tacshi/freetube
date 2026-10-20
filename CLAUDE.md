@@ -25,7 +25,7 @@ These come first. Violating them breaks the project.
 3. **No App Store assumptions.** Do not add capabilities, entitlements, or workarounds aimed at App Store review (e.g. avoiding `WKWebView` cookie reads). Sideload-honest behavior is expected.
 4. **No telemetry, analytics, or remote logging by default.** Logs go to `os.Logger` only. Never add SDKs that beacon out. *User-approved exception:* watch-progress sync to the user's own YouTube account (`WatchProgressReporter`, Settings → "Sync watch progress with YouTube", only when signed in) — it talks to YouTube only, like YouTube's own apps do.
 5. **Cookies are sensitive.** Always store in Keychain via `KeychainHelper`. Never write them to disk, `UserDefaults`, plist, or logs. Never print cookie values.
-6. **Signed stream URLs are sensitive and time-limited.** Never persist them. In-memory cache only (`StreamURLCache`), 30-minute TTL max.
+6. **Signed stream URLs are sensitive and time-limited.** Never persist them. In memory only (any cache: 30-minute TTL max).
 7. **MVVM with service layer is mandatory.** Views do not import `YouTubeKit`. ViewModels do not perform networking directly — they call services in `Core/Networking/`.
 8. **SwiftUI only for UI.** No UIKit `UIViewController` subclasses except where bridging is unavoidable (`WKWebView`, `AVPlayerLayer`, `AVRoutePickerView`, `AVPictureInPictureController`). Wrap those in `UIViewControllerRepresentable` / `UIViewRepresentable`.
 9. **Swift Concurrency is the default.** Use `async`/`await` and `AsyncSequence`. Use Combine only inside `PlayerStateManager` for `AVPlayer` time observation. Do not introduce RxSwift.
@@ -43,7 +43,6 @@ These come first. Violating them breaks the project.
 | Networking (YouTube) | `b5i/YouTubeKit` |
 | Stream resolution | `YouTubeKit` `/player` requests with custom client contexts (`VISIONOS`, `TVHTML5_SIMPLY_EMBEDDED_PLAYER`) — see §7 |
 | Playback | `AVFoundation` / `AVKit` (`AVQueuePlayer`, `AVPlayerLayer`, `AVPictureInPictureController`, `AVRoutePickerView`) — custom controls, no `AVPlayerViewController` |
-| Now-playing indicator | `SwimplyPlayIndicator` |
 | Login web view | `WebKit` (`WKWebView`, `WKHTTPCookieStore` against ephemeral `.nonPersistent()` data store) |
 | Images | `Kingfisher` |
 | Secure storage | `Security` (raw Keychain via `KeychainHelper`) |
@@ -68,20 +67,18 @@ FreeTube/
 │   │                      # SessionManager, SubscriptionRegistry, AuthState
 │   ├── Player/            # PlayerStateManager, QueueManager, PictureInPictureModel,
 │   │                      # AudioSessionConfigurator, NowPlayingCenter,
-│   │                      # RemoteCommandCenter, StreamURLCache, HLSResourceLoaderDelegate
+│   │                      # RemoteCommandCenter, WatchProgressReporter, YouTubeResumeCache
 │   ├── Persistence/       # @Model types, PersistenceController, PersistenceWriter
 │   └── Models/            # Domain types: Video, Channel, Playlist, Comment,
-│                          # VideoFormat, VideoQuality, ErrorState,
-│                          # PlaybackSource, UserPreferences, YouTubeServiceError
+│                          # VideoQuality, ErrorState, UserPreferences, YouTubeServiceError
 ├── Features/
 │   ├── Home/              # HomeScreen + HomeViewModel
 │   ├── Search/            # SearchScreen, SearchSuggestionList, SearchViewModel
-│   ├── Subscriptions/     # SubscriptionsScreen + ViewModel
 │   ├── Library/           # LibraryScreen, HistoryScreen, SubscribedChannelsScreen, ViewModels
 │   ├── Channel/           # ChannelScreen, ChannelTabScreen, ViewModel
 │   ├── Playlist/          # PlaylistScreen + ViewModel
-│   ├── VideoDetail/       # VideoDetailScreen, CommentsSection, SaveToPlaylistSheet, ViewModels
-│   ├── Account/           # AccountScreen + ViewModel
+│   ├── VideoDetail/       # CommentsSection + CommentsViewModel (shown in the player)
+│   ├── Account/           # AccountViewModel (used by LibraryScreen)
 │   ├── Login/             # LoginScreen, LoginWebView
 │   └── Settings/          # SettingsScreen + ViewModel
 ├── UI/
@@ -89,7 +86,7 @@ FreeTube/
 │   │                      # AirPlayButton, PlaybackStatusOverlay, WindowControlsInsetReader
 │   ├── Components/        # VideoCard, VideoRow, VideoTileGrid, ChannelRow, CommentRow,
 │   │                      # PlaylistRow, AddToPlaylistSheet, ActivityShareSheet,
-│   │                      # NowPlayingIndicator, SectionHeader, LoadingView
+│   │                      # SectionHeader, LoadingView
 │   └── Modifiers/         # ErrorToastModifier, ReadableContentWidthModifier
 ├── Resources/
 │   └── Localizable.xcstrings    # en / es / ru / fr / de
@@ -119,18 +116,14 @@ Every YouTubeKit response type gets exactly one service method. Do not call `You
 | Response | Service method |
 |---|---|
 | `HomeScreenResponse` (+Continuation), requested as our `HomeScreenFeedbackResponse` (+Continuation): same request, plus each video's "Not interested" / undo tokens | `HomeService.fetchHome()` / `fetchMore()` |
-| `TrendingVideosResponse` | `HomeService.fetchTrending()` |
 | `SearchResponse` (+Continuation, +Restricted) | `SearchService.search(query:restricted:)` / `fetchMore()` |
 | `AutoCompletionResponse` | `SearchService.autocomplete(query:)` |
 | `ChannelInfosResponse` (+Videos/Shorts/Directs/Playlists +Continuations) | `ChannelService.fetchChannel(id:)` / `fetchVideos()` / `fetchShorts()` / `fetchDirects()` / `fetchPlaylists()` |
 | `PlaylistInfosResponse` (+Continuation) | `PlaylistService.fetchPlaylist(id:)` / `fetchMore()` |
 | `VideoInfosResponse` | `VideoService.fetchInfo(id:)` / `fetchInfo(id:anonymous:)` (YouTubeKit's default: watch-page scrape — metadata; HLS only for live) — **also `fetchInfoViaVisionOS(id:)`** (`VISIONOS` `/player`, primary stream source) and **`fetchInfoViaTVHTML5(id:)`** (`TVHTML5_SIMPLY_EMBEDDED_PLAYER` `/player`, PoT-exempt progressive) |
-| `VideoInfosWithDownloadFormatsResponse` | `VideoService.fetchInfoWithFormats(id:)` |
 | `MoreVideoInfosResponse` | `VideoService.fetchMoreInfo(id:)` |
 | `AccountInfosResponse` | `AccountService.fetchAccountInfo()` |
 | `AccountLibraryResponse` | `AccountService.fetchLibrary()` |
-| `AccountPlaylistsResponse` | `AccountService.fetchPlaylists()` |
-| `AccountSubscriptionsFeedResponse` | `SubscriptionService.fetchFeed()` |
 | `AccountSubscriptionsResponse` | `SubscriptionService.fetchSubscriptions()` |
 | `HistoryResponse` / `RemoveVideoFromHistroryResponse` | `HistoryService.fetch()` / `remove(videoID:)` |
 | `FeedbackResponse` (ours: YouTube's `/feedback` request, borrowed from `RemoveVideoFromHistroryResponse`) | `FeedbackService.send(token:)` ("Not interested" and its Undo) |
@@ -140,7 +133,7 @@ Every YouTubeKit response type gets exactly one service method. Do not call `You
 | `CreatePlaylistResponse` / `DeletePlaylistResponse` / `MoveVideoInPlaylistResponse` | `PlaylistService.create/delete/move*` |
 | `LikeVideoResponse` / `DislikeVideoResponse` / `RemoveLikeFromVideoResponse` | `VideoActionsService.like/dislike/removeRating*` |
 | `CreateCommentResponse` / `EditCommentResponse` / `DeleteCommentResponse` | `CommentService.create/edit/delete*` |
-| `ReplyCommentResponse` / `EditReplyCommandResponse` | `CommentService.reply/editReply*` |
+| `ReplyCommentResponse` | `CommentService.reply(commentID:text:)` |
 | `LikeCommentResponse` / `DislikeCommentResponse` / `RemoveLikeCommentResponse` / `RemoveDislikeCommentResponse` | `CommentService.like/dislike/removeRating*` |
 | `CommentTranslationResponse` | `CommentService.translate(commentID:)` |
 
