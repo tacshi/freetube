@@ -45,6 +45,15 @@ final class PlayerStateManager {
     /// Current playback speed (1.0 = normal). Persisted; set from the player's ⋯ menu.
     private(set) var playbackRate: Double = 1.0
 
+    // MARK: Recommendations
+    /// YouTube's recommendations for the current video (`MoreVideoInfosResponse`), shown under
+    /// the player like the YouTube app's related list. Autoplay continues with the first one
+    /// that hasn't been played this session.
+    private(set) var recommendations: [Video] = []
+    /// A recommendations fetch for the current video is in flight.
+    private(set) var isLoadingRecommendations = false
+    @ObservationIgnored private var recommendationsTask: Task<[Video], Never>?
+
     /// One audio track offered by the current stream (`AVMediaSelectionOption`).
     struct MediaChoice: Identifiable, Hashable {
         /// Index into the media selection group's `options`.
@@ -82,14 +91,10 @@ final class PlayerStateManager {
     private let preferences: UserPreferences
     private let log = AppLog(subsystem: "com.leshko.freetube", category: "PlayerStateManager")
 
-    /// Sticky "this queue is endless" intent. Set to `true` whenever the user loads a video
-    /// without explicitly skipping recommendations (Home / Search / Mini-player / row taps),
-    /// and `false` for curated batch actions like playlist's Play all / Shuffle all. Drives:
-    ///   1. The per-load `fillQueueWithRecommendations` call in `resolveAndPlay`.
-    ///   2. The auto-advance dead-end recovery in `playNext()` — when the queue runs out and
-    ///      repeat is off, we fire a fresh recs fetch using the queue's last item as a seed,
-    ///      then advance once new items land. That gives the requested "endless queue" feel:
-    ///      whenever you reach the latest item, recommendations refill behind it.
+    /// Whether autoplay may continue into recommendations once the queue runs out. `true`
+    /// whenever the user loads a video without explicitly skipping recommendations (Home /
+    /// Search / recommendation taps), `false` for curated batch actions like playlist's Play
+    /// all / Shuffle all, which stop at the end of the playlist.
     private var queueAcceptsRecommendations = true
 
     private var timeObserver: Any?
@@ -162,11 +167,11 @@ final class PlayerStateManager {
 
     /// Loads a video for playback.
     ///
-    /// - Parameter skipRecommendations: when `true`, suppresses the post-play "fill queue with
-    ///   YouTube recommendations" call. Pass this from explicit batch actions that already
-    ///   populated a curated queue — playlist's Play all / Shuffle all — so the user's queue
-    ///   stays exactly what they chose. Default is `false` so single-video taps from Home /
-    ///   Search / Mini-player still get the YouTube-app-style autoplay chain.
+    /// - Parameter skipRecommendations: when `true`, autoplay doesn't continue into YouTube's
+    ///   recommendations once the queue ends. Pass this from explicit
+    ///   batch actions that already populated a curated queue — playlist's Play all / Shuffle
+    ///   all — so playback stops after the playlist. Default is `false` so single-video taps
+    ///   from Home / Search / the recommendation list get the YouTube-app-style autoplay chain.
     func load(_ video: Video, autoplay: Bool = true, skipRecommendations: Bool = false) {
         log.info("load(\(video.id, privacy: .public)) autoplay=\(autoplay, privacy: .public) skipRecs=\(skipRecommendations, privacy: .public)")
         queueAcceptsRecommendations = !skipRecommendations
@@ -200,7 +205,8 @@ final class PlayerStateManager {
         duration = 0
         recordWatchHistory(video: video)
         refreshArtwork(for: video)
-        Task { await resolveAndPlay(video: video, autoplay: autoplay, skipRecommendations: skipRecommendations) }
+        loadRecommendations(for: video)
+        Task { await resolveAndPlay(video: video, autoplay: autoplay) }
     }
 
     /// Upserts a `WatchHistoryEntry` so the Library's "Recents" section reflects what the user
@@ -305,28 +311,26 @@ final class PlayerStateManager {
             load(next)
             return
         }
-        // Queue at end. If this queue accepts recommendations and the user hasn't asked for
-        // repeat-all/repeat-one, refill from the last item's recommendations and try advancing
-        // again — that's the "endless queue" behavior: every time we hit the bottom, more recs
-        // refill behind us.
+        // Queue at end: continue with the current video's first recommendation, like the
+        // YouTube app's autoplay. Skips anything already played this session (the queue keeps
+        // what was played) so two videos recommending each other don't ping-pong.
         guard queueAcceptsRecommendations,
               queue.repeatMode == .off,
-              let seed = queue.items.last else {
-            log.notice("playNext: queue at end, no recs refill (acceptsRecs=\(self.queueAcceptsRecommendations, privacy: .public), repeat=\(String(describing: self.queue.repeatMode), privacy: .public))")
+              let seedID = currentVideo?.id else {
+            log.notice("playNext: queue at end, no autoplay (acceptsRecs=\(self.queueAcceptsRecommendations, privacy: .public), repeat=\(String(describing: self.queue.repeatMode), privacy: .public))")
             return
         }
-        log.info("playNext: queue at end, refilling recs from seed=\(seed.id, privacy: .public)")
+        let task = recommendationsTask
         Task { [weak self] in
-            guard let self else { return }
-            let countBefore = self.queue.items.count
-            await self.fillQueueWithRecommendations(for: seed)
-            guard self.queue.items.count > countBefore else {
-                self.log.notice("playNext: refill produced no new items, giving up")
+            let recommendations = await task?.value ?? []
+            guard let self, self.currentVideo?.id == seedID else { return }
+            let played = Set(self.queue.items.map(\.id))
+            guard let next = recommendations.first(where: { !played.contains($0.id) }) else {
+                self.log.notice("playNext: no unplayed recommendation after \(seedID, privacy: .public)")
                 return
             }
-            if let next = self.queue.advance() {
-                self.load(next)
-            }
+            self.log.info("playNext: autoplaying recommendation \(next.id, privacy: .public)")
+            self.load(next)
         }
     }
 
@@ -348,6 +352,10 @@ final class PlayerStateManager {
         pendingResume = nil
         currentVideo = nil
         loadState = .idle
+        recommendationsTask?.cancel()
+        recommendationsTask = nil
+        recommendations = []
+        isLoadingRecommendations = false
         player.removeAllItems()
         NowPlayingCenter.clear()
     }
@@ -403,7 +411,7 @@ final class PlayerStateManager {
         }
     }
 
-    private func resolveAndPlay(video: Video, autoplay: Bool, skipRecommendations: Bool = false) async {
+    private func resolveAndPlay(video: Video, autoplay: Bool) async {
         log.info("resolveAndPlay: start for \(video.id, privacy: .public)")
         // **Tap → play, like the YouTube app.** Resolve an HLS URL (`StreamService`) and hand it
         // straight to `AVPlayer` — no download, nothing written to disk. If the item later fails,
@@ -446,19 +454,6 @@ final class PlayerStateManager {
         updateNowPlaying()
         if autoplay { play() }
         log.info("resolveAndPlay: finished happy-path for \(video.id, privacy: .public)")
-        // Fire-and-forget queue fill — uses YouTube's `/next` (WEB) endpoint, independent of the
-        // resolver's `/player` (IOS) endpoint, so it can't interfere with playback that's already
-        // running. Failures are logged but never surface to the user; queue stays as-is on error.
-        //
-        // Suppressed only when the caller explicitly asks (playlist's Play all / Shuffle all).
-        // Every other entry point — single video taps from Home/Search/Mini-player, queue-row
-        // taps, Next/Previous, and even tapping an individual playlist video — gets the
-        // autoplay-style recommendation fill, so the player keeps advancing past the seed.
-        if !skipRecommendations {
-            Task { [weak self] in
-                await self?.fillQueueWithRecommendations(for: video)
-            }
-        }
     }
 
     // MARK: - Speed, subtitles, audio
@@ -697,22 +692,31 @@ final class PlayerStateManager {
         }
     }
 
-    /// Fetches `MoreVideoInfosResponse` for the current video and appends the recommended videos to
-    /// the queue. This is what makes the player behave like the YouTube app: tap any video and a
-    /// fresh "up next" queue is ready to advance when the current track ends.
-    private func fillQueueWithRecommendations(for seed: Video) async {
-        do {
-            let info = try await VideoService().fetchMoreInfo(id: seed.id)
-            // Only append recommendations that aren't already queued, preserving the user's own
-            // ordering if they came from a "Play all" playlist load.
-            let existingIDs = Set(queue.items.map(\.id))
-            let toAppend = info.recommended.filter { !existingIDs.contains($0.id) }
-            for rec in toAppend {
-                queue.append(rec)
+    /// Fetches `MoreVideoInfosResponse` (YouTube's `/next`, independent of the stream lookup, so
+    /// it can't hold up playback) and publishes its recommended videos for the player's related
+    /// list. Runs in parallel with stream resolution so the list fills while the video loads.
+    /// Failures are logged and leave the list empty.
+    private func loadRecommendations(for video: Video) {
+        recommendationsTask?.cancel()
+        recommendations = []
+        isLoadingRecommendations = true
+        let videoID = video.id
+        let task = Task { [log] () -> [Video] in
+            do {
+                let info = try await VideoService().fetchMoreInfo(id: videoID)
+                return info.recommended.filter { $0.id != videoID && !$0.isShort }
+            } catch {
+                log.notice("Recommendation fetch failed for \(videoID, privacy: .public): \(String(describing: error), privacy: .public)")
+                return []
             }
-            log.info("Queued \(toAppend.count, privacy: .public) recommendations for \(seed.id, privacy: .public)")
-        } catch {
-            log.notice("Recommendation fetch failed for \(seed.id, privacy: .public): \(String(describing: error), privacy: .public)")
+        }
+        recommendationsTask = task
+        Task { [weak self] in
+            let videos = await task.value
+            guard let self, !task.isCancelled, self.currentVideo?.id == videoID else { return }
+            self.recommendations = videos
+            self.isLoadingRecommendations = false
+            self.log.info("Loaded \(videos.count, privacy: .public) recommendations for \(videoID, privacy: .public)")
         }
     }
 

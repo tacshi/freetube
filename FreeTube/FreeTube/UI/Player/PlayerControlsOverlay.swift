@@ -249,6 +249,14 @@ struct PlayerControlsOverlay: View {
                 }
                 .pickerStyle(.menu)
             }
+
+            // YouTube's "Loop video": replays the current video instead of autoplaying the next.
+            Toggle(isOn: Binding(
+                get: { player.queue.repeatMode == .one },
+                set: { player.queue.repeatMode = $0 ? .one : .off }
+            )) {
+                Label("Loop video", systemImage: "repeat.1")
+            }
         } label: {
             Image(systemName: "ellipsis")
                 .font(.title3.weight(.semibold))

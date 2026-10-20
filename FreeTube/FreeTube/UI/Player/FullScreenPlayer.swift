@@ -6,18 +6,19 @@ import Kingfisher
 
 /// The player, presented by `RootView` as a full-screen cover as soon as a video is tapped (there
 /// is no mini player). Renders the surface, transport controls, metadata, the toggleable
-/// comments / queue panel, and its own Close button; closing stops playback.
+/// comments / related-videos panel, and its own Close button; closing stops playback.
 @available(iOS 17.0, *)
 struct FullScreenPlayer: View {
     @Environment(PlayerStateManager.self) private var player
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     /// Reactive list of all favorited videos so menu rendering doesn't have to fetch Core Data on
     /// every redraw (per-row SQL on the main queue otherwise).
     @Query private var favorites: [FavoriteVideo]
 
     /// What's shown in the lower panel of the stacked layout. Default is `.comments`, matching the
-    /// side-by-side layout where comments are always visible; the "Up next" button on the right of
-    /// the transport row switches to the queue.
+    /// side-by-side layout where comments are always visible; the "Related" button on the right of
+    /// the transport row switches to the related videos.
     @State private var panel: Panel = .comments
     /// Async-loaded description / details for the currently-playing video. Fetched on demand when
     /// the user taps "More" under the channel row.
@@ -28,7 +29,7 @@ struct FullScreenPlayer: View {
     /// truncated preview, and tries to load extended details (tags etc.) if not yet loaded.
     @State private var isDetailsExpanded = false
     /// Currently-pushed channel (nil = panel mode). When non-nil, the lower section swaps the
-    /// metadata + comments/queue panel for a NavigationStack rooted at `ChannelScreen`. Keeping
+    /// metadata + comments / related panel for a NavigationStack rooted at `ChannelScreen`. Keeping
     /// the NavigationStack **conditionally mounted** is what makes the panel-mode background
     /// match the transport row: SwiftUI's NavigationStack container paints opaque under its
     /// content, so any thinMaterial inside it stacks on top of an opaque layer and reads darker
@@ -54,7 +55,7 @@ struct FullScreenPlayer: View {
     /// Full-screen mode: the video fills the player window and everything else hides.
     @State private var isVideoFullScreen = false
     /// Theater mode (wide windows only): the video spans the full player width; info / comments
-    /// and Up next move into two columns below it. Remembered across launches, like YouTube.
+    /// and related videos move into two columns below it. Remembered across launches, like YouTube.
     @AppStorage("playerTheaterMode") private var theaterMode = false
 
     /// Hashable wrapper so `.navigationDestination(for:)` can match the channel id and push
@@ -63,11 +64,15 @@ struct FullScreenPlayer: View {
         let id: String
     }
 
-    enum Panel { case comments, queue }
+    enum Panel { case comments, related }
+
+    /// How the related list draws its videos: full-width cards under the video on phones,
+    /// compact thumbnail rows in the side column or on wide screens, like the YouTube app.
+    enum RelatedStyle { case cards, rows }
 
     var body: some View {
         // Single dark-blur material under EVERYTHING — status bar inset, video chrome, transport,
-        // comments, queue. Removing per-section backgrounds and using one full-screen material lets
+        // comments, related videos. Removing per-section backgrounds and using one full-screen material lets
         // the popup read as one continuous translucent surface instead of three stacked tones.
         //
         // **Why the outer `GeometryReader`:** we want the video to fill its column edge to edge
@@ -91,7 +96,7 @@ struct FullScreenPlayer: View {
                 } else {
                     // `AnyLayout` rather than an `if`/`else` so rotating between the stacked and
                     // side-by-side arrangements keeps view identity: the video layer (and its PiP
-                    // controller) isn't torn down mid-playback, and the comments / queue panel
+                    // controller) isn't torn down mid-playback, and the comments / related panel
                     // keeps its scroll position. (Toggling theater mode does rebuild the video
                     // layer; playback continues on the same `AVPlayer`.)
                     let layout = sideBySide
@@ -107,7 +112,7 @@ struct FullScreenPlayer: View {
                                     .padding(.vertical, 10)
 
                                 // Side by side, the space under the video holds the video's info and
-                                // comments (like YouTube's iPad layout); the right column is Up next.
+                                // comments (like YouTube's iPad layout); the right column is related videos.
                                 if sideBySide, let video = player.currentVideo {
                                     Divider()
                                     infoAndComments(video)
@@ -150,7 +155,7 @@ struct FullScreenPlayer: View {
         .persistentSystemOverlays(isVideoFullScreen ? .hidden : .automatic)
         // Reset description state, (best-effort) prefetch the snippet, AND pop any pushed
         // channel screen whenever the user picks a new video — otherwise tapping the next video
-        // in the queue would leave a stale channel push on screen. Lives here (not on the lower
+        // in the related list would leave a stale channel push on screen. Lives here (not on the lower
         // section) so hiding the panels in full-screen mode doesn't re-trigger it.
         .onChange(of: player.currentVideo?.id, initial: true) { _, _ in
             details = nil
@@ -198,7 +203,7 @@ struct FullScreenPlayer: View {
     }
 
     /// Theater mode: video across the full width at 16:9, then the action row + info / comments on
-    /// the left and Up next on the right. Only if a full-width video would leave less than
+    /// the left and related videos on the right. Only if a full-width video would leave less than
     /// `theaterMinPanelHeight` for the panels does it shrink (and the picture letterbox).
     @ViewBuilder
     private func theaterLayout(in size: CGSize) -> some View {
@@ -243,7 +248,7 @@ struct FullScreenPlayer: View {
         p.fullScreenPresented = false
     }
 
-    /// Stacked: metadata + comments / queue panel. Side by side: Up next only (info and comments
+    /// Stacked: metadata + comments / related panel. Side by side: related videos only (info and comments
     /// live under the video). Either way, the pushed channel stack replaces it when a channel
     /// is open.
     @ViewBuilder
@@ -262,14 +267,14 @@ struct FullScreenPlayer: View {
             //    ChannelTabScreen / PlaylistScreen) push further into this stack.
             //
             // The previous version kept the NavigationStack mounted in both modes — that
-            // forced us to paint an inner thinMaterial under the comments/queue panel,
+            // forced us to paint an inner thinMaterial under the comments / related panel,
             // which stacked on top of the stack's opaque container and read noticeably
             // darker than the transport row. Mounting the stack only when needed fixes it.
             Group {
                 if let channel = pushedChannel {
                     channelStack(channel)
                 } else if sideBySide {
-                    upNextColumn
+                    relatedColumn
                 } else {
                     panel(video)
                 }
@@ -292,7 +297,7 @@ struct FullScreenPlayer: View {
 
     /// Side by side when the popup is landscape-shaped and wide enough for two usable columns.
     /// Stacked, a full-width video in a landscape window is `width × 9/16` tall: on an iPad that
-    /// leaves only a sliver for comments / queue, and on an iPhone it overflows the screen.
+    /// leaves only a sliver for comments / related videos, and on an iPhone it overflows the screen.
     private static func usesSideBySideLayout(for size: CGSize) -> Bool {
         size.width > size.height && size.width >= sideBySideMinWidth
     }
@@ -319,8 +324,8 @@ struct FullScreenPlayer: View {
                 switch self.panel {
                 case .comments:
                     CommentsSection(videoID: video.id)
-                case .queue:
-                    queuePanel
+                case .related:
+                    relatedList(style: horizontalSizeClass == .compact ? .cards : .rows)
                 }
             }
             .padding(.vertical)
@@ -329,7 +334,7 @@ struct FullScreenPlayer: View {
     }
 
     /// Side-by-side left column under the transport row: title, channel, description and
-    /// comments, scrolling independently of the Up next column.
+    /// comments, scrolling independently of the related column.
     @ViewBuilder
     private func infoAndComments(_ video: Video) -> some View {
         ScrollView {
@@ -343,10 +348,10 @@ struct FullScreenPlayer: View {
         .scrollContentBackground(.hidden)
     }
 
-    /// Side-by-side right column: the Up next queue on its own.
-    private var upNextColumn: some View {
+    /// Side-by-side right column: the related videos on their own.
+    private var relatedColumn: some View {
         ScrollView {
-            queuePanel
+            relatedList(style: .rows)
                 .padding(.vertical)
         }
         .scrollContentBackground(.hidden)
@@ -376,7 +381,7 @@ struct FullScreenPlayer: View {
                 // Solid black, matching the playlist push inside this same NavigationStack.
                 // We deliberately don't use `.thinMaterial` here — pushed destinations inside
                 // the popup body use opaque black for visual consistency with PlaylistScreen,
-                // while the panel-mode comments/queue area keeps the popup's outer thinMaterial.
+                // while the panel-mode comments / related area keeps the popup's outer thinMaterial.
                 .background {
                     Color.black.ignoresSafeArea()
                 }
@@ -591,15 +596,15 @@ struct FullScreenPlayer: View {
     // MARK: - Transport
 
     /// Row under the video: the video's actions (Like, Save, Copy URL) and — stacked layout only —
-    /// the queue / comments toggle. Play/pause, seeking and close live on the video itself
+    /// the related / comments toggle. Play/pause, seeking and close live on the video itself
     /// (`PlayerControlsOverlay`), so they aren't repeated here;
-    /// previous / next are covered by the Up next list and the lock-screen remote.
+    /// previous / next are covered by the related list and the lock-screen remote.
     ///
-    /// `showsPanelToggle`: the queue / comments switch only matters in the stacked layout, where
+    /// `showsPanelToggle`: the related / comments switch only matters in the stacked layout, where
     /// the two share one panel; side by side both are always visible.
     private func transportRow(showsPanelToggle: Bool) -> some View {
         // Each button takes an equal-width slot, so the row reads as evenly spaced and centered
-        // whether it holds one action (signed out) or four (signed in + queue toggle).
+        // whether it holds one action (signed out) or four (signed in + panel toggle).
         HStack(spacing: 0) {
             if let video = player.currentVideo {
                 if isSignedIn {
@@ -717,195 +722,41 @@ struct FullScreenPlayer: View {
 
     // MARK: - Panel switch (right of transport)
 
-    /// Stacked layout only: switches the lower panel between Up next and comments. Labeled with
-    /// where it goes ("Comments" / "Up next"), styled like the other actions, so the comments
-    /// panel is visibly one tap away instead of hiding behind a bare list glyph.
+    /// Stacked layout only: switches the lower panel between related videos and comments. Labeled
+    /// with where it goes ("Comments" / "Related"), styled like the other actions, so the other
+    /// panel is visibly one tap away instead of hiding behind a bare glyph.
     private var panelSwitchButton: some View {
         actionButton(
-            panel == .queue ? "Comments" : "Up next",
-            systemImage: panel == .queue ? "text.bubble" : "list.bullet"
+            panel == .related ? "Comments" : "Related",
+            systemImage: panel == .related ? "text.bubble" : "play.rectangle.on.rectangle"
         ) {
             withAnimation(.snappy) {
-                panel = (panel == .queue) ? .comments : .queue
+                panel = (panel == .related) ? .comments : .related
             }
         }
     }
 
-    // MARK: - Queue controls (shuffle + repeat)
+    // MARK: - Related videos
 
-    /// Shuffle pill — active = capsule highlight behind the glyph, same icon color. Tap toggles
-    /// `QueueManager.isShuffleOn` which rebuilds the play order on the queue manager itself.
-    @ViewBuilder
-    private var shuffleButton: some View {
-        Button {
-            player.queue.isShuffleOn.toggle()
-        } label: {
-            Image(systemName: "shuffle")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Color.primary)
-                .frame(width: 36, height: 28)
-                .background {
-                    if player.queue.isShuffleOn {
-                        Capsule().fill(.ultraThinMaterial)
-                    }
-                }
-        }
-        .buttonStyle(.plain)
-    }
-
-    /// Repeat pill — cycles through .off → .all → .one → .off. Active states (.all and .one) get
-    /// the capsule highlight; `.one` swaps to the `repeat.1` SF Symbol so the user can see the
-    /// single-track variant at a glance.
-    @ViewBuilder
-    private var repeatButton: some View {
-        Button {
-            switch player.queue.repeatMode {
-            case .off: player.queue.repeatMode = .all
-            case .all: player.queue.repeatMode = .one
-            case .one: player.queue.repeatMode = .off
-            }
-        } label: {
-            Image(systemName: player.queue.repeatMode == .one ? "repeat.1" : "repeat")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Color.primary)
-                .frame(width: 36, height: 28)
-                .background {
-                    if player.queue.repeatMode != .off {
-                        Capsule().fill(.ultraThinMaterial)
-                    }
-                }
-        }
-        .buttonStyle(.plain)
-    }
-
-    // MARK: - Queue panel sizing
-
-    /// Fixed height of one queue row's content area. 56pt accommodates the 80×45 thumbnail with
-    /// a hair of breathing room. Combined with our `.listRowInsets(top: 4, bottom: 4)` each row
-    /// occupies 64pt of vertical space in the List.
-    private static let queueRowHeight: CGFloat = 56
-
-    /// Per-row footprint including insets, used by `queueListHeight` below.
-    private static let queueRowFootprint: CGFloat = queueRowHeight + 8 // 4pt top + 4pt bottom insets
-
-    /// Total height we hand to the queue `List`. Sized for the actual number of items + a 32pt
-    /// bottom margin so the last row's edit-handle / swipe affordance isn't truncated.
-    private var queueListHeight: CGFloat {
-        let count = max(1, player.queue.items.count)
-        return CGFloat(count) * Self.queueRowFootprint + 32
-    }
-
-    // MARK: - Queue panel
-
-    @ViewBuilder
-    private var queuePanel: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                SectionHeader(title: "Up next")
-                Spacer()
-                shuffleButton
-                repeatButton
-            }
-            .padding(.horizontal)
-            // `List` is the cleanest source of drag-to-reorder + swipe-to-delete in SwiftUI. We're
-            // already inside a ScrollView, so we cap the list with a generous fixed height so it
-            // doesn't try to consume the outer scroll's gesture space.
-            List {
-                ForEach(player.queue.items) { video in
-                    queueRow(video)
-                        .listRowBackground(Color.clear)
-                        // Pin a deterministic row height so the outer `.frame(height:)` below can
-                        // calculate the exact List size — otherwise iOS's auto-sized rows end up
-                        // slightly taller than our estimate and the last row gets clipped.
-                        .frame(height: Self.queueRowHeight)
-                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                }
-                .onMove { source, destination in
-                    let from = source.first ?? 0
-                    player.queue.move(from: from, to: destination)
-                }
-                .onDelete { offsets in
-                    for index in offsets.sorted(by: >) {
-                        player.queue.remove(at: index)
-                    }
+    /// YouTube's recommendations for the current video (`PlayerStateManager.recommendations`),
+    /// shown like the YouTube app's related list rather than an editable queue. Tapping one
+    /// plays it; autoplay continues with the first one not yet played.
+    private func relatedList(style: RelatedStyle) -> some View {
+        LazyVStack(alignment: .leading, spacing: style == .cards ? 20 : 12) {
+            ForEach(player.recommendations) { video in
+                switch style {
+                case .cards:
+                    VideoCard(video: video, onTap: { player.load(video) }, showsMoreMenu: true)
+                case .rows:
+                    VideoRow(video: video, onTap: { player.load(video) }, showsMoreMenu: true)
+                        .padding(.horizontal)
                 }
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .environment(\.editMode, .constant(.active))
-            .scrollDisabled(true)
-            // Row height (`queueRowHeight`) + insets (`4+4`) + a tail margin so the last row's
-            // bottom edge isn't flush with the next sibling view in the outer scroll.
-            .frame(height: queueListHeight)
-        }
-    }
-
-    @ViewBuilder
-    private func queueRow(_ video: Video) -> some View {
-        HStack(spacing: 0) {
-            Button {
-                player.load(video)
-            } label: {
-                HStack(spacing: 12) {
-                    // Thumbnail with duration badge in the bottom-right corner — same affordance
-                    // YouTube uses on its own video tiles. Costs no extra row height.
-                    ZStack(alignment: .bottomTrailing) {
-                        KFImage(video.thumbnailURL)
-                            .thumbnail(size: CGSize(width: 80, height: 45)) {
-                                Color.gray.opacity(0.2)
-                            }
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 80, height: 45)
-                            .clipped()
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-
-                        if !video.durationString.isEmpty {
-                            Text(video.durationString)
-                                .font(.system(size: 9, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 1)
-                                .background(Color.black.opacity(0.78), in: RoundedRectangle(cornerRadius: 3))
-                                .padding(3)
-                        }
-                    }
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(video.title)
-                            .font(.subheadline)
-                            .lineLimit(2)
-                        // Channel name + playback count joined by a middle dot. Either piece can be
-                        // empty (older listings sometimes omit view count), filter before joining so
-                        // there are no stray separators.
-                        Text(queueRowMetadata(for: video))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    if video.id == player.currentVideo?.id {
-                        // Animated audio bars instead of the static speaker glyph. Animates only
-                        // for the matched row; other rows render nothing because the parent `if`
-                        // gates mounting.
-                        NowPlayingIndicator(videoID: video.id)
-                    }
-                }
+            if player.isLoadingRecommendations {
+                ProgressView()
+                    .frame(maxWidth: .infinity)
+                    .padding()
             }
-            .buttonStyle(.plain)
-
-            // Sibling of the load-button so taps land in the Menu instead of the row's
-            // play handler. Same actions as the row would get in search/history/library.
-            VideoMoreActionsMenu(video: video)
         }
-    }
-
-    /// "Channel • 1.2M views" for the queue row's second line. Drops the dot if either side is
-    /// missing so we never render a dangling separator.
-    private func queueRowMetadata(for video: Video) -> String {
-        [video.channelName, video.viewCountString]
-            .filter { !$0.isEmpty }
-            .joined(separator: " • ")
     }
 }

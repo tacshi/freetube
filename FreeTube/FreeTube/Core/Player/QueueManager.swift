@@ -62,13 +62,20 @@ final class QueueManager {
     /// coherent when the user taps a fresh video from search/home, while preserving the queue when
     /// they navigate via `playNext()` / `playPrevious()` (which both call `load` with a video that's
     /// already in `items` at the freshly-advanced position).
+    ///
+    /// A video that isn't in `items` (e.g. a recommendation tapped mid-playlist) leaves the
+    /// playlist, so a playlist's shuffle ends with it.
     func setCurrent(_ video: Video) {
         if let idx = items.firstIndex(of: video) {
             currentIndex = idx
         } else {
             items.append(video)
             currentIndex = items.count - 1
-            rebuildShuffleOrder()
+            if isShuffleOn {
+                isShuffleOn = false
+            } else {
+                rebuildShuffleOrder()
+            }
         }
     }
 
