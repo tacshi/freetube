@@ -167,7 +167,7 @@ If a URL resolves but the `AVPlayerItem` then fails (e.g. a 403), the item-statu
 
 - **One `PlayerStateManager`** is the single source of truth for current playback. Injected via SwiftUI `@Environment(PlayerStateManager.self)`.
 - **No mini player.** Tapping a video presents `FullScreenPlayer` as a `.fullScreenCover` from `RootView` (`PlayerStateManager.fullScreenPresented`); closing it stops playback. (LNPopupUI and its mini bar were removed.)
-- **Custom controls, not `AVPlayerViewController`.** The picture is a plain `AVPlayerLayer` (`VideoSurface`); `PlayerControlsOverlay` draws the controls YouTube-style: top bar with close chevron (leading) and full screen / PiP (`PictureInPictureModel`) / AirPlay (`AirPlayButton`) (trailing); center −10 / play-pause / +10; bottom scrubber + ⋯ menu (speed, subtitles, audio, loop video). Gestures: tap toggles (auto-hide after 3s while playing), double-tap half seeks ±10s, sideways drag scrubs, pull down closes. `AVPlayerViewController` was dropped because its controls can't be rearranged or trimmed (no API to hide the volume button or move the top bar) and its own tap / double-tap handling fought ours. Don't bring it back.
+- **Custom controls, not `AVPlayerViewController`.** The picture is a plain `AVPlayerLayer` (`VideoSurface`); `PlayerControlsOverlay` draws the controls YouTube-style: top bar with close chevron (leading) and full screen / PiP (`PictureInPictureModel`) / AirPlay (`AirPlayButton`) (trailing); center −10 / play-pause / +10; bottom scrubber + ⋯ menu (quality, speed, subtitles, audio track, loop video, sleep timer). Quality choices come from the HLS variants (`PlayerStateManager.qualityChoices`); a fixed quality is a ceiling via `preferredMaximumResolution` and is the same setting as Settings → Preferred quality. Gestures: tap toggles (auto-hide after 3s while playing), double-tap half seeks ±10s, sideways drag scrubs, pull down closes. `AVPlayerViewController` was dropped because its controls can't be rearranged or trimmed (no API to hide the volume button or move the top bar) and its own tap / double-tap handling fought ours. Don't bring it back.
 - **Full-screen mode** is `FullScreenPlayer.isVideoFullScreen`: the video fills the player window, panels hide, status bar hidden. The chevron or pull-down leaves full screen first.
 - **Window controls (iPadOS 26 windowed apps):** `WindowControlsInsetReader` measures the traffic lights' footprint; the video column (or, in full screen, the top bar) is padded by it so they never cover controls.
 - **`AVQueuePlayer`**, not `AVPlayer`. Required for `advanceToNextItem()` and queue introspection. Important: `replaceCurrentItem(with:)` is a no-op on `AVQueuePlayer` when its internal queue is empty (our usual state). Use `removeAllItems()` + `insert(_:after:)` (see the `loadItem` helper).
@@ -381,7 +381,7 @@ If asked to "make it more robust" or "production-ready", point to these realitie
 - No offline playback — the app streams only (§10).
 - IP-level rate limiting from YouTube can hit users on shared networks (CGNAT, VPN). No client-side fix.
 - This codebase intentionally does not implement App Store evasion techniques. Sideload distribution is the assumption.
-- HLS variant selection is left to AVPlayer's adaptive bitrate logic; `preferredQuality.heightCap` only applies to progressive-MP4 streams.
+- HLS variant selection is left to AVPlayer's adaptive bitrate logic; `preferredQuality.heightCap` only caps it (`preferredMaximumResolution`), it can't force a minimum.
 
 ---
 

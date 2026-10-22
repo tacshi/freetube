@@ -65,6 +65,22 @@ final class PlayerStateManager {
     private(set) var selectedAudioID: Int?
     @ObservationIgnored private var audibleGroup: AVMediaSelectionGroup?
 
+    // MARK: Quality
+    /// Fixed qualities the current stream offers (from its HLS variants), highest first. Empty
+    /// until the item is ready, or when the stream has a single rendition.
+    private(set) var qualityChoices: [VideoQuality] = []
+    /// The user's quality setting (shared with Settings → Preferred quality). A fixed quality is
+    /// a ceiling: AVPlayer still drops lower when the network can't keep up.
+    private(set) var quality: VideoQuality
+    /// Height of the picture playing right now (shorter side, so portrait videos read like
+    /// YouTube's "1080p"), shown as "Auto (720p)".
+    private(set) var playingHeight: Int?
+    @ObservationIgnored private var presentationSizeObservation: NSKeyValueObservation?
+
+    // MARK: Sleep timer
+    private(set) var sleepTimer: SleepTimer = .off
+    @ObservationIgnored private var sleepTask: Task<Void, Never>?
+
     // MARK: Captions
     /// YouTube caption tracks for the current video (from `StreamService`; YouTube's HLS streams
     /// carry no subtitles of their own). Empty when the video has none.
@@ -137,6 +153,7 @@ final class PlayerStateManager {
     ) {
         self.queue = queue
         self.preferences = preferences
+        self.quality = preferences.preferredQuality
         // Keep the audio track running when the player view goes off-screen (popup minimize, app
         // backgrounded). Without this, AVPlayer pauses video tracks as soon as their pixel buffer
         // pipeline is no longer visible, which manifests as "audio cuts out the moment you collapse
@@ -336,6 +353,7 @@ final class PlayerStateManager {
         log.info("dismiss()")
         pause()
         watchReporter.end()
+        setSleepTimer(.off)
         fullScreenPresented = false
         itemVideoID = nil
         pendingResume = nil
@@ -380,6 +398,7 @@ final class PlayerStateManager {
                     self.log.info("AVPlayerItem status: readyToPlay (duration=\(item.duration.seconds, privacy: .public)s)")
                     self.applyPendingResume(for: item)
                     self.loadMediaChoices(for: item)
+                    self.loadQualityChoices(for: item)
                 case .failed:
                     let err = item.error as NSError?
                     self.log.error("AVPlayerItem status: FAILED domain=\(err?.domain ?? "?", privacy: .public) code=\(err?.code ?? 0, privacy: .public) info=\(String(describing: err?.userInfo), privacy: .public)")
@@ -387,6 +406,15 @@ final class PlayerStateManager {
                 @unknown default:
                     break
                 }
+            }
+        }
+
+        presentationSizeObservation = item.observe(\.presentationSize, options: [.new, .initial]) { [weak self] item, _ in
+            let size = item.presentationSize
+            Task { @MainActor in
+                guard let self, self.player.currentItem === item else { return }
+                let height = size == .zero ? nil : Int(min(size.width, size.height))
+                if height != self.playingHeight { self.playingHeight = height }
             }
         }
 
@@ -556,7 +584,83 @@ final class PlayerStateManager {
         audibleGroup = nil
         audioChoices = []
         selectedAudioID = nil
+        qualityChoices = []
+        playingHeight = nil
         clearCaptions()
+    }
+
+    // MARK: - Quality
+
+    /// Sets the quality ceiling for this and later videos (same value as Settings → Preferred
+    /// quality). The current item switches renditions at its next segment.
+    func setQuality(_ newQuality: VideoQuality) {
+        quality = newQuality
+        preferences.preferredQuality = newQuality
+        if let item = player.currentItem {
+            applyQualityCap(to: item)
+        }
+    }
+
+    /// The menu's selection: the setting, or the stream's best when the setting is above what
+    /// this video offers (a 1440p setting on a 1080p video reads "1080p").
+    var effectiveQuality: VideoQuality {
+        guard quality != .auto, let cap = quality.heightCap,
+              let best = qualityChoices.first, let bestHeight = best.heightCap,
+              cap > bestHeight else { return quality }
+        return best
+    }
+
+    private func applyQualityCap(to item: AVPlayerItem) {
+        if let cap = quality.heightCap, cap > 0 {
+            item.preferredMaximumResolution = CGSize(width: CGFloat(cap) * 16 / 9, height: CGFloat(cap))
+        } else {
+            item.preferredMaximumResolution = .zero
+        }
+    }
+
+    /// Reads the HLS variants' resolutions once the item is ready and offers the matching
+    /// `VideoQuality` steps.
+    private func loadQualityChoices(for item: AVPlayerItem) {
+        guard let asset = item.asset as? AVURLAsset else { return }
+        Task { @MainActor [weak self] in
+            let variants = (try? await asset.load(.variants)) ?? []
+            guard let self, self.player.currentItem === item else { return }
+            let heights = Set(variants.compactMap { variant -> Int? in
+                guard let size = variant.videoAttributes?.presentationSize else { return nil }
+                return Int(min(size.width, size.height))
+            })
+            self.qualityChoices = Self.qualities(forHeights: heights)
+        }
+    }
+
+    /// Standard steps (144p…2160p) the stream reaches, highest first. A variant between two
+    /// steps (e.g. 404p) counts as the step below it.
+    private static func qualities(forHeights heights: Set<Int>) -> [VideoQuality] {
+        let steps = VideoQuality.allCases.filter { $0 != .auto && $0 != .audioOnly }
+        let offered = Set(heights.compactMap { height in
+            steps.last { ($0.heightCap ?? 0) <= height }
+        })
+        let choices = steps.filter(offered.contains).reversed()
+        return choices.count > 1 ? Array(choices) : []
+    }
+
+    // MARK: - Sleep timer
+
+    /// Pauses playback after `timer`'s minutes, or when the current video ends.
+    func setSleepTimer(_ timer: SleepTimer) {
+        sleepTask?.cancel()
+        sleepTask = nil
+        sleepTimer = timer
+        guard case .minutes(let minutes) = timer else { return }
+        log.info("sleep timer: pausing in \(minutes, privacy: .public) min")
+        sleepTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(minutes * 60))
+            guard !Task.isCancelled, let self else { return }
+            self.log.info("sleep timer: fired, pausing")
+            self.pause()
+            self.sleepTimer = .off
+            self.sleepTask = nil
+        }
     }
 
     private static func choices(in group: AVMediaSelectionGroup?) -> [MediaChoice] {
@@ -636,9 +740,9 @@ final class PlayerStateManager {
     /// own; `preferredMaximumResolution` keeps AVPlayer's variant choice under the cap.
     private func makeItem(url: URL) -> AVPlayerItem {
         let item = AVPlayerItem(url: url)
-        if let cap = preferences.preferredQuality.heightCap {
-            item.preferredMaximumResolution = CGSize(width: CGFloat(cap) * 16 / 9, height: CGFloat(cap))
-        }
+        // Pick up a change made in Settings since the last video.
+        quality = preferences.preferredQuality
+        applyQualityCap(to: item)
         return item
     }
 
@@ -755,6 +859,11 @@ final class PlayerStateManager {
                     self.persistPosition(videoID: videoID, position: self.duration, duration: self.duration)
                     self.watchReporter.tick(position: self.duration, isPlaying: false)
                     self.watchReporter.flush()
+                }
+                if self.sleepTimer == .endOfVideo {
+                    self.log.info("sleep timer: video ended, not continuing")
+                    self.setSleepTimer(.off)
+                    return
                 }
                 if self.preferences.autoplayNext { self.playNext() }
             }

@@ -5,7 +5,7 @@ import SwiftUI
 /// - **Top bar:** close chevron on the leading side; captions (CC, when the video has any),
 ///   theater mode (wide windows), full screen, Picture in Picture and AirPlay on the trailing side.
 /// - **Center:** −10s / play-pause / +10s.
-/// - **Bottom:** elapsed time, scrubber, remaining time, ⋯ menu (speed, subtitles, audio).
+/// - **Bottom:** elapsed time, scrubber, remaining time, ⋯ menu (`PlayerSettingsMenu`).
 /// - **Captions:** the selected YouTube caption track, drawn above the bottom bar.
 ///
 /// Gestures on the video: tap shows / hides the controls (they auto-hide after a few seconds
@@ -45,7 +45,6 @@ struct PlayerControlsOverlay: View {
     /// Seconds a drag across the full video width moves (capped at the video's length).
     private static let scrubSecondsPerWidth: TimeInterval = 120
     private static let autoHideDelay: Duration = .seconds(3)
-    private static let speeds: [Double] = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
 
     var body: some View {
         GeometryReader { proxy in
@@ -201,74 +200,8 @@ struct PlayerControlsOverlay: View {
             } else {
                 Spacer(minLength: 0)
             }
-            moreMenu
+            PlayerSettingsMenu()
         }
-    }
-
-    // MARK: - ⋯ menu
-
-    private var moreMenu: some View {
-        Menu {
-            Picker(selection: Binding(
-                get: { player.playbackRate },
-                set: { player.setPlaybackRate($0) }
-            )) {
-                ForEach(Self.speeds, id: \.self) { speed in
-                    Text(verbatim: Self.speedLabel(speed)).tag(speed)
-                }
-            } label: {
-                Label("Playback speed", systemImage: "gauge.with.dots.needle.67percent")
-            }
-            .pickerStyle(.menu)
-
-            if !player.captionTracks.isEmpty {
-                Picker(selection: Binding(
-                    get: { player.selectedCaptionID },
-                    set: { player.selectCaption($0) }
-                )) {
-                    Text("Off").tag(String?.none)
-                    ForEach(player.captionTracks) { track in
-                        Text(verbatim: track.name).tag(String?.some(track.id))
-                    }
-                } label: {
-                    Label("Subtitles", systemImage: "captions.bubble")
-                }
-                .pickerStyle(.menu)
-            }
-
-            if player.audioChoices.count > 1 {
-                Picker(selection: Binding(
-                    get: { player.selectedAudioID ?? 0 },
-                    set: { player.selectAudio($0) }
-                )) {
-                    ForEach(player.audioChoices) { choice in
-                        Text(verbatim: choice.name).tag(choice.id)
-                    }
-                } label: {
-                    Label("Audio", systemImage: "waveform")
-                }
-                .pickerStyle(.menu)
-            }
-
-            // YouTube's "Loop video": replays the current video instead of autoplaying the next.
-            Toggle(isOn: Binding(
-                get: { player.queue.repeatMode == .one },
-                set: { player.queue.repeatMode = $0 ? .one : .off }
-            )) {
-                Label("Loop video", systemImage: "repeat.1")
-            }
-        } label: {
-            Image(systemName: "ellipsis")
-                .font(.title3.weight(.semibold))
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
-        }
-        .accessibilityLabel("More")
-    }
-
-    private static func speedLabel(_ speed: Double) -> String {
-        let number = speed == speed.rounded() ? String(Int(speed)) : String(format: "%g", speed)
-        return number + "×"
     }
 
     // MARK: - Gestures
@@ -424,10 +357,11 @@ struct PlayerControlsOverlay: View {
             Text(verbatim: text)
                 .font(.system(size: min(max(videoHeight * 0.045, 14), 30), weight: .medium))
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(.black.opacity(0.75), in: RoundedRectangle(cornerRadius: 4))
-                .padding(.horizontal, 24)
+                // No box behind the text: a tight dark edge plus a soft shadow keeps white
+                // captions readable on bright frames.
+                .shadow(color: .black.opacity(0.9), radius: 1)
+                .shadow(color: .black.opacity(0.6), radius: 4)
+                .padding(.horizontal, 32)
                 .padding(.bottom, controlsVisible ? 56 : 14)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                 .allowsHitTesting(false)
