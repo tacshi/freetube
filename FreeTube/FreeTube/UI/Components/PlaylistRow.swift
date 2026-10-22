@@ -4,7 +4,7 @@ import Kingfisher
 /// Playlist list row. Used by search results, channel/library playlist lists.
 ///
 /// Set `showsMoreMenu: true` to render a trailing ellipsis Menu next to the row content
-/// (open in browser, copy URL, favorites). The Menu is a sibling of the tap target so taps
+/// (open in browser, copy URL, favorites, and "Delete playlist" when `onDelete` is set). The Menu is a sibling of the tap target so taps
 /// on it don't trigger `onTap` / the surrounding NavigationLink.
 @available(iOS 17.0, *)
 struct PlaylistRow: View {
@@ -17,6 +17,9 @@ struct PlaylistRow: View {
 
     var showsMoreMenu: Bool = false
 
+    /// Adds "Delete playlist" to the more menu. Only for playlists the user owns.
+    var onDelete: (() -> Void)? = nil
+
     var body: some View {
         HStack(spacing: 0) {
             if let onTap {
@@ -27,7 +30,7 @@ struct PlaylistRow: View {
             }
 
             if showsMoreMenu {
-                PlaylistMoreActionsMenu(playlist: playlist)
+                PlaylistMoreActionsMenu(playlist: playlist, onDelete: onDelete)
             }
         }
     }

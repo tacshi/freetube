@@ -9,6 +9,16 @@ struct PlaylistAvailability: Identifiable, Hashable, Sendable {
     let isPrivate: Bool
 }
 
+/// YouTube answered a playlist edit without reporting success — typically the playlist isn't
+/// the user's (a saved playlist can't be deleted or edited).
+enum PlaylistEditError: LocalizedError {
+    case rejected
+
+    var errorDescription: String? {
+        String(localized: "YouTube didn't accept the change to this playlist.")
+    }
+}
+
 protocol PlaylistServicing: Sendable {
     func fetchPlaylist(id: String) async throws -> PlaylistDetails
     func fetchMore(continuation: String) async throws -> PlaylistDetails
@@ -168,8 +178,29 @@ final class PlaylistService: PlaylistServicing {
         throw YouTubeServiceError.notAuthenticated
     }
 
+    /// Removes every occurrence of `videoID` from one of the user's playlists (Watch later
+    /// included — pass `VLWL` or `WL`). Liked videos isn't editable this way: removing a video
+    /// from it means removing the like (`VideoActionsService.removeRating`).
     func removeVideo(byID videoID: String, from playlistID: String) async throws {
-        throw YouTubeServiceError.notAuthenticated
+        let bareID = playlistID.hasPrefix("VL") ? String(playlistID.dropFirst(2)) : playlistID
+        log.info("[playlists] remove videoID=\(videoID, privacy: .public) from playlistID=\(bareID, privacy: .public)")
+        do {
+            let response = try await RemoveVideoByIdFromPlaylistResponse.sendThrowingRequest(
+                youtubeModel: client.model,
+                data: [.movingVideoId: videoID, .browseId: bareID]
+            )
+            if response.isDisconnected {
+                throw YouTubeServiceError.notAuthenticated
+            }
+            guard response.success else {
+                throw YouTubeServiceError.unknown(PlaylistEditError.rejected)
+            }
+        } catch let error as YouTubeServiceError {
+            throw error
+        } catch {
+            log.error("[playlists] remove failed: \(String(describing: error), privacy: .public)")
+            throw YouTubeServiceError.network(error)
+        }
     }
 
     /// Creates a new playlist with `title`, optionally seeding it with one initial video.
@@ -210,8 +241,28 @@ final class PlaylistService: PlaylistServicing {
         }
     }
 
+    /// Deletes one of the user's own playlists. YouTube refuses for playlists the user only
+    /// saved (owned by someone else) — that surfaces as `PlaylistEditError.rejected`.
     func delete(playlistID: String) async throws {
-        throw YouTubeServiceError.notAuthenticated
+        let bareID = playlistID.hasPrefix("VL") ? String(playlistID.dropFirst(2)) : playlistID
+        log.info("[playlists] delete playlistID=\(bareID, privacy: .public)")
+        do {
+            let response = try await DeletePlaylistResponse.sendThrowingRequest(
+                youtubeModel: client.model,
+                data: [.browseId: bareID]
+            )
+            if response.isDisconnected {
+                throw YouTubeServiceError.notAuthenticated
+            }
+            guard response.success else {
+                throw YouTubeServiceError.unknown(PlaylistEditError.rejected)
+            }
+        } catch let error as YouTubeServiceError {
+            throw error
+        } catch {
+            log.error("[playlists] delete failed: \(String(describing: error), privacy: .public)")
+            throw YouTubeServiceError.network(error)
+        }
     }
 
     func move(playlistVideoID: String, in playlistID: String, toIndex: Int) async throws {

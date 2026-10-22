@@ -119,7 +119,7 @@ struct LibraryScreen: View {
                 subtitle: countSubtitle(libraryModel.library?.playlists.count, noun: "playlist"),
                 systemImage: "rectangle.stack.fill"
             ) {
-                UserPlaylistsScreen(playlists: libraryModel.library?.playlists ?? [])
+                UserPlaylistsScreen(model: libraryModel)
             }
 
             menuRow(
@@ -209,9 +209,14 @@ struct LibraryScreen: View {
 
 /// Simple list of user-owned playlists. Each row pushes `PlaylistScreen` for the playlist's
 /// detail view (videos + actions). Reuses `PlaylistRow` so the visual matches search/channel.
+/// "Delete playlist" sits in each row's ⋯ menu and asks for confirmation, since it can't be
+/// undone. (Swipe actions are for removing items inside a list, not whole lists.)
 @available(iOS 17.0, *)
 private struct UserPlaylistsScreen: View {
-    let playlists: [Playlist]
+    let model: LibraryViewModel
+    @State private var pendingDeletion: Playlist?
+
+    private var playlists: [Playlist] { model.library?.playlists ?? [] }
 
     var body: some View {
         Group {
@@ -225,9 +230,13 @@ private struct UserPlaylistsScreen: View {
                 List {
                     ForEach(playlists) { playlist in
                         NavigationLink {
-                            PlaylistScreen(playlistID: playlist.id)
+                            PlaylistScreen(playlistID: playlist.id) {
+                                model.forgetPlaylist(id: playlist.id)
+                            }
                         } label: {
-                            PlaylistRow(playlist: playlist, showsMoreMenu: true)
+                            PlaylistRow(playlist: playlist, showsMoreMenu: true) {
+                                pendingDeletion = playlist
+                            }
                         }
                         .buttonStyle(.plain)
                     }
@@ -238,6 +247,20 @@ private struct UserPlaylistsScreen: View {
         .readableContentWidth()
         .navigationTitle("Playlists")
         .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog(
+            "Delete this playlist?",
+            isPresented: Binding(
+                get: { pendingDeletion != nil },
+                set: { if !$0 { pendingDeletion = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingDeletion
+        ) { playlist in
+            Button("Delete playlist", role: .destructive) {
+                Task { await model.deletePlaylist(playlist) }
+            }
+        } message: { playlist in
+            Text("\"\(playlist.title)\" will be deleted from your YouTube account.")
+        }
     }
 }
-

@@ -8,15 +8,17 @@ import Kingfisher
 ///   3. Glass-pill action toolbar — Play all / Shuffle all + More menu
 ///   4. List of videos
 ///
-/// Edit mode + the swipe-to-delete / drag-to-reorder handlers were removed: most playlists
-/// shown here belong to other YouTube users, so the buttons would always fail. We'll wire them
-/// back behind a `playlist.isOwnedByUser` check when authenticated playlists ship.
+/// A `List` rather than a `ScrollView` so video rows get swipe actions: swipe left removes the
+/// video when `PlaylistViewModel.canRemoveVideos` (the user's own playlists, Watch later,
+/// Liked videos). Other people's playlists get no swipe action. Deleting the whole playlist
+/// lives in the ⋯ menu, for the user's own playlists only.
 @available(iOS 17.0, *)
 struct PlaylistScreen: View {
     @State private var model: PlaylistViewModel
     @Environment(PlayerStateManager.self) private var player
     @Environment(\.modelContext) private var modelContext
     @Environment(\.openURL) private var openURL
+    @Environment(\.dismiss) private var dismiss
 
     /// Reactive list of saved-playlist favorites so the More menu can show the right
     /// "Add to favorites" / "Remove from favorites" state without a per-render fetch.
@@ -27,24 +29,25 @@ struct PlaylistScreen: View {
     /// header stays compact and the video list isn't pushed below the fold.
     @State private var isDetailsExpanded = false
 
-    init(playlistID: String) {
+    @State private var isConfirmingDelete = false
+
+    /// Called after the playlist was deleted from the ⋯ menu, before the screen pops — lets
+    /// the Library's Playlists list drop it without a refetch.
+    private let onDeleted: (() -> Void)?
+
+    init(playlistID: String, onDeleted: (() -> Void)? = nil) {
         _model = State(wrappedValue: PlaylistViewModel(playlistID: playlistID))
+        self.onDeleted = onDeleted
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                if let details = model.details {
-                    // Header section: artwork + metadata + toolbar inside a leading-aligned
-                    // VStack, with the blurred-artwork backdrop applied via `.background { … }`.
-                    // The VStack's `.frame(maxWidth: .infinity, alignment: .leading)` forces
-                    // full-width layout — earlier I'd used a `ZStack(alignment: .top)` which
-                    // *center-aligns horizontally* (the alignment-`.top` shorthand pairs `.top`
-                    // vertical with `.center` horizontal), shifting every row to the right.
-                    // The background's `.ignoresSafeArea(.top)` extends the blurred image up
-                    // under the navigation bar and status bar — combined with
-                    // `.toolbarBackground(.hidden)` on the ScrollView below, the blur reaches
-                    // the very top of the screen.
+        List {
+            if let details = model.details {
+                // Header row: artwork + metadata + toolbar inside a leading-aligned VStack,
+                // with the blurred-artwork backdrop applied via `.background { … }`. The
+                // VStack's `.frame(maxWidth: .infinity, alignment: .leading)` forces full-width
+                // layout — a `ZStack(alignment: .top)` would center-align horizontally.
+                VStack(alignment: .leading, spacing: 0) {
                     VStack(alignment: .leading, spacing: 16) {
                         artworkHeader(details)
                         metadataBlock(details)
@@ -62,15 +65,22 @@ struct PlaylistScreen: View {
 
                     // Full-bleed divider — no horizontal padding so the line spans edge to edge.
                     Divider()
-
-                    videosList(details.videos)
-                        .readableContentWidth()
-                        .padding(.vertical)
-                } else if model.isLoading {
-                    LoadingView().padding(.top, 60)
                 }
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+
+                videosList(details.videos)
+            } else if model.isLoading {
+                LoadingView()
+                    .padding(.top, 60)
+                    .frame(maxWidth: .infinity)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
             }
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
         .navigationBarTitleDisplayMode(.inline)
         // Hide the navigation bar's own background so the blurred artwork shows through it —
         // without this the nav bar paints its standard translucent material on top, hiding the
@@ -78,15 +88,32 @@ struct PlaylistScreen: View {
         .toolbarBackground(.hidden, for: .navigationBar)
         .task { await model.load() }
         .errorToast(Bindable(model).errorState)
+        .confirmationDialog(
+            "Delete this playlist?",
+            isPresented: $isConfirmingDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Delete playlist", role: .destructive) {
+                Task {
+                    if await model.deletePlaylist() {
+                        onDeleted?()
+                        dismiss()
+                    }
+                }
+            }
+        } message: {
+            if let title = model.details?.playlist.title {
+                Text("\"\(title)\" will be deleted from your YouTube account.")
+            }
+        }
     }
 
     // MARK: - Blurred artwork backdrop
 
-    /// Heavily-blurred, dimmed copy of the playlist artwork. Layered behind the header section
-    /// via the surrounding `ZStack`. Extends up under the status/navigation bar via
-    /// `.ignoresSafeArea(edges: .top)`, and down exactly to the bottom of the toolbar — the
-    /// `ZStack`'s height matches the foreground VStack, so the blur stops naturally at the
-    /// divider underneath.
+    /// Heavily-blurred, dimmed copy of the playlist artwork, layered behind the header row.
+    /// It stops at the bottom of the toolbar (the divider underneath) and overflows the row's
+    /// top edge by `overscan`, so it reaches up under the navigation and status bars — and
+    /// covers the pull-down bounce. List rows don't clip, and nothing sits above the header.
     ///
     /// Three layers stacked inside:
     ///   1. The artwork itself, `.resizable().scaledToFill().blur(radius: 60)`.
@@ -114,8 +141,11 @@ struct PlaylistScreen: View {
             )
         }
         .clipped()
-        .ignoresSafeArea(edges: .top)
+        .padding(.top, -overscan)
     }
+
+    /// How far the blurred backdrop reaches above the header row.
+    private let overscan: CGFloat = 400
 
     // MARK: - Artwork
 
@@ -345,6 +375,14 @@ struct PlaylistScreen: View {
                     Label("Add to favorites", systemImage: "hand.thumbsup")
                 }
             }
+            if model.canDeletePlaylist {
+                Divider()
+                Button(role: .destructive) {
+                    isConfirmingDelete = true
+                } label: {
+                    Label("Delete playlist", systemImage: "trash")
+                }
+            }
         } label: {
             Image(systemName: "ellipsis")
                 .font(.footnote.weight(.bold))
@@ -359,7 +397,7 @@ struct PlaylistScreen: View {
 
     @ViewBuilder
     private func videosList(_ videos: [Video]) -> some View {
-        LazyVStack(spacing: 0) {
+        Group {
             ForEach(Array(videos.enumerated()), id: \.element.id) { index, video in
                 VideoRow(video: video) {
                     // Make sure the queue reflects the playlist's order before kicking off
@@ -368,7 +406,19 @@ struct PlaylistScreen: View {
                     player.load(video)
                 }
                 .padding(.horizontal)
-                .padding(.vertical, 6)
+                .readableContentWidth()
+                .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+                .swipeActions {
+                    if model.canRemoveVideos {
+                        Button(role: .destructive) {
+                            Task { await model.remove(video) }
+                        } label: {
+                            Label("Remove", systemImage: "trash")
+                        }
+                    }
+                }
                 .onAppear {
                     // Trigger the next-page fetch when the row 5 from the bottom appears.
                     // PlaylistService caches the continuation token on the response struct, so
@@ -387,6 +437,8 @@ struct PlaylistScreen: View {
                     Spacer()
                 }
                 .padding(.vertical, 8)
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
                 .onAppear {
                     if model.canLoadMore { Task { await model.loadMore() } }
                 }

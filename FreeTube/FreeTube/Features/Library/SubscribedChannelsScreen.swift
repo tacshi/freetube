@@ -37,6 +37,13 @@ struct SubscribedChannelsScreen: View {
                             ChannelRow(channel: channel)
                         }
                         .buttonStyle(.plain)
+                        .swipeActions {
+                            Button(role: .destructive) {
+                                Task { await model.unsubscribe(channel) }
+                            } label: {
+                                Label("Unsubscribe", systemImage: "person.badge.minus")
+                            }
+                        }
                         .onAppear { prefetchIfNeeded(currentIndex: index) }
                     }
                     if model.canLoadMore || model.isLoadingMore {
@@ -122,6 +129,21 @@ final class SubscriptionsListViewModel {
                 SubscriptionRegistry.shared.seed(channels.map(\.id))
             }
         } catch {
+            errorState = ErrorState(from: error)
+        }
+    }
+
+    /// Unsubscribes from `channel`. The row disappears right away and comes back if YouTube
+    /// refuses. `SubscriptionService.unsubscribe` also updates `SubscriptionRegistry`.
+    func unsubscribe(_ channel: Channel) async {
+        guard let index = channels.firstIndex(where: { $0.id == channel.id }) else { return }
+        channels.remove(at: index)
+        do {
+            try await service.unsubscribe(channelID: channel.id)
+        } catch {
+            if !channels.contains(where: { $0.id == channel.id }) {
+                channels.insert(channel, at: min(index, channels.count))
+            }
             errorState = ErrorState(from: error)
         }
     }

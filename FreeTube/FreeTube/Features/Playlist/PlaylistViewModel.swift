@@ -14,10 +14,33 @@ final class PlaylistViewModel {
     var errorState: ErrorState?
 
     private let service: any PlaylistServicing
+    private let videoActions: any VideoActionsServicing
 
-    init(playlistID: String, service: any PlaylistServicing = PlaylistService()) {
+    init(
+        playlistID: String,
+        service: any PlaylistServicing = PlaylistService(),
+        videoActions: any VideoActionsServicing = VideoActionsService()
+    ) {
         self.playlistID = playlistID
         self.service = service
+        self.videoActions = videoActions
+    }
+
+    /// Bare playlist id — `VLWL` and `WL` both mean Watch later.
+    private var bareID: String {
+        playlistID.hasPrefix("VL") ? String(playlistID.dropFirst(2)) : playlistID
+    }
+
+    /// True when the user can remove videos from this playlist: their own playlists (YouTube
+    /// marks them editable), Watch later, and Liked videos (removing there removes the like).
+    var canRemoveVideos: Bool {
+        bareID == "LL" || bareID == "WL" || details?.playlist.isOwnedByUser == true
+    }
+
+    /// True for the user's own playlists, which they can delete from the ⋯ menu. Watch later
+    /// and Liked videos are built in and can't be deleted.
+    var canDeletePlaylist: Bool {
+        bareID != "LL" && bareID != "WL" && details?.playlist.isOwnedByUser == true
     }
 
     func load() async {
@@ -68,11 +91,40 @@ final class PlaylistViewModel {
         }
     }
 
-    func delete(_ video: Video) async {
+    /// Deletes the whole playlist from the user's YouTube account. Returns false (and sets
+    /// `errorState`) when YouTube refuses, so the screen stays put.
+    func deletePlaylist() async -> Bool {
         do {
-            try await service.removeVideo(byID: video.id, from: playlistID)
-            await load()
+            try await service.delete(playlistID: playlistID)
+            return true
         } catch {
+            errorState = ErrorState(from: error)
+            return false
+        }
+    }
+
+    /// Removes `video` from the playlist. The row disappears right away and comes back if
+    /// YouTube refuses. Liked videos is special: YouTube keeps it in sync with ratings, so
+    /// the removal is an un-like.
+    func remove(_ video: Video) async {
+        guard let current = details,
+              let index = current.videos.firstIndex(where: { $0.id == video.id })
+        else { return }
+        var videos = current.videos
+        videos.remove(at: index)
+        details = PlaylistDetails(playlist: current.playlist, videos: videos, continuationToken: current.continuationToken)
+        do {
+            if bareID == "LL" {
+                try await videoActions.removeRating(videoID: video.id)
+            } else {
+                try await service.removeVideo(byID: video.id, from: playlistID)
+            }
+        } catch {
+            if let latest = details, !latest.videos.contains(where: { $0.id == video.id }) {
+                var restored = latest.videos
+                restored.insert(video, at: min(index, restored.count))
+                details = PlaylistDetails(playlist: latest.playlist, videos: restored, continuationToken: latest.continuationToken)
+            }
             errorState = ErrorState(from: error)
         }
     }

@@ -8,12 +8,15 @@ import UIKit
 /// Auth-gating rules (per product spec):
 ///   - Open in browser, Copy URL: always shown
 ///   - Add to favorites / Remove from favorites: shown only when signed in
+///   - Delete playlist: shown only when the caller passes `onDelete` (the user's own playlists)
 ///
 /// Favorites are stored locally in `FavoritePlaylist` (SwiftData) — no YouTube sync, so the
 /// auth gate is purely a UI affordance: when signed out, the menu is just the two URL actions.
 @available(iOS 17.0, *)
 struct PlaylistMoreActionsMenu: View {
     let playlist: Playlist
+    /// Called from "Delete playlist". The caller confirms and deletes; nil hides the item.
+    var onDelete: (() -> Void)? = nil
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.openURL) private var openURL
@@ -43,6 +46,12 @@ struct PlaylistMoreActionsMenu: View {
                     } else {
                         Label("Add to favorites", systemImage: "hand.thumbsup")
                     }
+                }
+            }
+            if let onDelete {
+                Divider()
+                Button(role: .destructive, action: onDelete) {
+                    Label("Delete playlist", systemImage: "trash")
                 }
             }
         } label: {
