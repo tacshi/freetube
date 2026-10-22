@@ -120,9 +120,7 @@ struct SearchContent: View {
                 Section("Videos") {
                     let lookaheadIDs = Set(results.videos.suffix(5).map(\.id))
                     ForEach(results.videos) { video in
-                        VideoRow(video: video, showsMoreMenu: true) {
-                            player.load(video)
-                        }
+                        VideoRow(video: video, onTap: { player.load(video) }, showsMoreMenu: true)
                         .onAppear {
                             guard lookaheadIDs.contains(video.id),
                                   results.continuationToken != nil,

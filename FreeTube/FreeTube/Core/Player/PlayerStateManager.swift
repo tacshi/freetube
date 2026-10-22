@@ -147,11 +147,15 @@ final class PlayerStateManager {
     @ObservationIgnored private var seekInFlight = false
     @ObservationIgnored private var queuedSeek: (time: TimeInterval, precise: Bool)?
 
+    /// Defaults are `nil` rather than `QueueManager()` / `UserPreferences()`: default-argument
+    /// expressions are evaluated outside the main actor, where those main-actor initializers
+    /// can't be called synchronously.
     init(
-        queue: QueueManager = QueueManager(),
-        preferences: UserPreferences = UserPreferences()
+        queue: QueueManager? = nil,
+        preferences: UserPreferences? = nil
     ) {
-        self.queue = queue
+        let preferences = preferences ?? UserPreferences()
+        self.queue = queue ?? QueueManager()
         self.preferences = preferences
         self.quality = preferences.preferredQuality
         // Keep the audio track running when the player view goes off-screen (popup minimize, app

@@ -56,7 +56,9 @@ final class HomeService: HomeServicing {
         let categories = ["Trending", "Music", "Gaming", "News", "Sports"]
         let sections = await withTaskGroup(of: HomeFeedSection?.self) { group -> [HomeFeedSection] in
             for category in categories {
-                group.addTask { [client] in
+                // Main actor: `Mappers` is main-actor isolated (the project's default). The
+                // request itself still runs off main; only the mapping of 20 results lands here.
+                group.addTask { @MainActor [client] in
                     do {
                         let response = try await SearchResponse.sendThrowingRequest(
                             youtubeModel: client.model,

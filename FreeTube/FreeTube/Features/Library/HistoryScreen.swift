@@ -12,7 +12,7 @@ struct HistoryScreen: View {
     var body: some View {
         List {
             ForEach(Array(model.videos.enumerated()), id: \.element.id) { index, video in
-                VideoRow(video: video, showsMoreMenu: true) { player.load(video) }
+                VideoRow(video: video, onTap: { player.load(video) }, showsMoreMenu: true)
                     .swipeActions {
                         Button(role: .destructive) {
                             Task { await model.remove(video) }

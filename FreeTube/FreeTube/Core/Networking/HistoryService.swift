@@ -68,13 +68,17 @@ final class HistoryService: HistoryServicing {
     }
 
     /// Flattens `HistoryBlock` groups into a single video array, preserving the response's
-    /// newest-first ordering. Each block carries `videosArray` (regular videos with suppression
-    /// tokens for delete) plus shorts blocks; we ignore the shorts groupings here.
+    /// newest-first ordering. Each block's `contentsArray` mixes regular videos and shorts
+    /// shelves; both are listed, in order.
     private func flatten(_ blocks: [HistoryResponse.HistoryBlock]) -> [Video] {
         var out: [Video] = []
         for block in blocks {
-            for entry in block.videosArray {
-                out.append(Mappers.video(from: entry.video))
+            for content in block.contentsArray {
+                if let entry = content as? HistoryResponse.HistoryBlock.VideoWithToken {
+                    out.append(Mappers.video(from: entry.video))
+                } else if let shelf = content as? HistoryResponse.HistoryBlock.ShortsBlock {
+                    out.append(contentsOf: shelf.shorts.map { Mappers.video(from: $0) })
+                }
             }
         }
         return out
