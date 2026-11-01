@@ -13,7 +13,6 @@ struct UserPreferences {
     /// capturing diagnostic traces from TestFlight / sideload installs where Console.app
     /// access isn't practical. Defaults off — only a handful of users will ever flip this.
     @AppStorage("logToFile") var logToFile: Bool = false
-    @AppStorage("restrictedSearchMode") var restrictedSearchMode: Bool = false
     @AppStorage("appearanceMode") var appearanceModeRaw: String = AppearanceMode.system.rawValue
     /// Persisted playback rate (1.0 = normal speed). Mirrors `AVPlayer.defaultRate`, which is the
     /// value the player's ⋯ speed menu writes (`PlayerStateManager.setPlaybackRate`).

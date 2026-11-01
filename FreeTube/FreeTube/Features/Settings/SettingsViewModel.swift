@@ -45,9 +45,4 @@ final class SettingsViewModel {
     func clearLogFiles() {
         LogFileWriter.shared.clearAllLogs()
     }
-
-    var restrictedSearchMode: Bool {
-        get { preferences.restrictedSearchMode }
-        set { preferences.restrictedSearchMode = newValue }
-    }
 }

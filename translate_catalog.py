@@ -705,12 +705,6 @@ T = {
         "fr": "Réinitialiser la session ?",
         "de": "Sitzung zurücksetzen?",
     },
-    "Restricted search mode": {
-        "es": "Modo de búsqueda restringido",
-        "ru": "Режим ограниченного поиска",
-        "fr": "Mode de recherche restreinte",
-        "de": "Eingeschränkter Suchmodus",
-    },
     "Retry": {"es": "Reintentar", "ru": "Повторить", "fr": "Réessayer", "de": "Wiederholen"},
     "Reveal in Finder": {
         "es": "Mostrar en Finder",

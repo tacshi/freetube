@@ -33,10 +33,6 @@ struct SettingsScreen: View {
                     Text("When signed in, videos you watch are added to your YouTube history and resume where you left off on any device.")
                 }
 
-                Section("Search") {
-                    Toggle("Restricted search mode", isOn: Bindable(model).restrictedSearchMode)
-                }
-
                 Section {
                     Toggle("Save logs to file", isOn: Bindable(model).logToFile)
                     if model.logToFile, let url = logWriter.currentLogFileURL {

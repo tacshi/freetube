@@ -15,7 +15,6 @@ final class SearchViewModel {
     var errorState: ErrorState?
 
     private let service: any SearchServicing
-    private let preferences = UserPreferences()
     private let log = AppLog(subsystem: "com.leshko.freetube", category: "SearchViewModel")
 
     private var autocompleteTask: Task<Void, Never>?
@@ -38,7 +37,7 @@ final class SearchViewModel {
         isLoading = true
         defer { isLoading = false }
         do {
-            let result = try await service.search(query: query, restricted: preferences.restrictedSearchMode)
+            let result = try await service.search(query: query)
             results = result
             suggestions = []
         } catch {
