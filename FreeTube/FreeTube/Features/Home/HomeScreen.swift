@@ -27,6 +27,15 @@ struct HomeScreen: View {
     /// host can do the upsert in `runSearch` (the field's submit fires on this view).
     @Query(sort: \SearchHistoryEntry.searchedAt, order: .reverse) private var history: [SearchHistoryEntry]
 
+    /// True while a pull-to-refresh runs. The system draws its own spinner then, so the feed
+    /// hides its `LoadingView` to avoid showing two.
+    @State private var isPullRefreshing = false
+
+    /// The feed's own spinner: initial load, auth-change reload, and pagination.
+    private var showsFeedSpinner: Bool {
+        model.isLoading && !isPullRefreshing
+    }
+
     private var isSearchActive: Bool {
         !searchModel.query.trimmingCharacters(in: .whitespaces).isEmpty
             || searchModel.results != nil
@@ -75,7 +84,9 @@ struct HomeScreen: View {
                 if isSearchActive {
                     await searchModel.submit()
                 } else {
+                    isPullRefreshing = true
                     await model.refresh()
+                    isPullRefreshing = false
                 }
             }
             .task {
@@ -154,7 +165,7 @@ struct HomeScreen: View {
                 }
             }
 
-            if model.isLoading {
+            if showsFeedSpinner {
                 LoadingView()
                     .listRowInsets(EdgeInsets())
                     .listRowSeparator(.hidden)
@@ -213,7 +224,7 @@ struct HomeScreen: View {
                     }
                 }
 
-                if model.isLoading {
+                if showsFeedSpinner {
                     LoadingView()
                 }
             }
