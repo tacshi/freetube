@@ -210,20 +210,25 @@ struct SearchContent: View {
     }
 }
 
-/// Inline search field used on Mac (Designed-for-iPad-on-Mac or real Catalyst). `.searchable`
-/// collapses to a trailing toolbar button on Mac runtimes — awkward at desktop widths. The
-/// host view embeds this above its content and skips `.searchable` via `ConditionalSearchable`.
+/// Inline search field used in place of `.searchable` on Mac (Designed-for-iPad-on-Mac or real
+/// Catalyst) and on compact-width iPhone. On Mac `.searchable` collapses to a trailing toolbar
+/// button — awkward at desktop widths; on iPhone it sits in a drawer under an empty navigation
+/// bar, wasting a bar's height. The host view embeds this above its content and skips
+/// `.searchable` via `ConditionalSearchable`.
 @available(iOS 17.0, *)
-struct MacInlineSearchField: View {
+struct InlineSearchField: View {
     @Binding var query: String
+    var prompt: LocalizedStringKey = "Search"
+    var isFocused: FocusState<Bool>.Binding
     let onSubmit: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
-            TextField("Search", text: $query)
+            TextField(prompt, text: $query)
                 .textFieldStyle(.plain)
+                .focused(isFocused)
                 .submitLabel(.search)
                 .onSubmit(onSubmit)
             if !query.isEmpty {
@@ -248,7 +253,7 @@ struct MacInlineSearchField: View {
 /// Applies `.searchable` only when `enabled`. We can't put `.searchable` behind a plain
 /// `if` because it returns an opaque `some View` whose type differs between branches,
 /// which breaks SwiftUI identity. A `ViewModifier` keeps the outer type stable across the
-/// runtime toggle (Mac → inline field, iOS → native searchable).
+/// runtime toggle (Mac / iPhone → inline field, iPad → native searchable).
 @available(iOS 17.0, *)
 struct ConditionalSearchable: ViewModifier {
     @Binding var text: String

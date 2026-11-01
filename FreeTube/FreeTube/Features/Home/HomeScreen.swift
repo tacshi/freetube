@@ -11,10 +11,11 @@ import SwiftData
 ///   - Non-empty query or any results / suggestions / spinner → render `SearchContent`.
 /// Clearing the search field automatically returns to the recents+feed view.
 ///
-/// **Mac runtime** gets a custom inline search field above the content via
-/// `MacInlineSearchField`, because SwiftUI's `.searchable` collapses to a trailing toolbar
-/// button on Designed-for-iPad-on-Mac and real Catalyst, which is awkward at desktop widths.
-/// iOS/iPadOS uses the native `.searchable` modifier as usual.
+/// **Mac runtime and compact-width iPhone** get a custom inline search field above the content
+/// via `InlineSearchField`. On Mac, SwiftUI's `.searchable` collapses to a trailing toolbar
+/// button, which is awkward at desktop widths; on iPhone it sits under an empty navigation bar
+/// (Home has no title), so the bar is hidden and the field takes its place. iPad uses the
+/// native `.searchable`, which shares the top row with the tab bar.
 @available(iOS 17.0, *)
 struct HomeScreen: View {
     @State private var model = HomeViewModel()
@@ -22,6 +23,7 @@ struct HomeScreen: View {
     @Environment(PlayerStateManager.self) private var player
     @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @FocusState private var isSearchFieldFocused: Bool
 
     /// Recent search queries — same store the previous Search tab used. Stays here so the
     /// host can do the upsert in `runSearch` (the field's submit fires on this view).
@@ -43,11 +45,23 @@ struct HomeScreen: View {
             || searchModel.isLoading
     }
 
+    private var isCompactPhoneLayout: Bool {
+        !MacIntegration.isRunningOnMac && horizontalSizeClass == .compact
+    }
+
+    private var usesInlineSearchField: Bool {
+        MacIntegration.isRunningOnMac || horizontalSizeClass == .compact
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                if MacIntegration.isRunningOnMac {
-                    MacInlineSearchField(query: $searchModel.query) {
+                if usesInlineSearchField {
+                    InlineSearchField(
+                        query: $searchModel.query,
+                        prompt: "Search YouTube",
+                        isFocused: $isSearchFieldFocused
+                    ) {
                         Task { await runSearch() }
                     }
                 }
@@ -65,9 +79,11 @@ struct HomeScreen: View {
             // No title: the tab bar already says Home. Inline mode keeps the bar compact (it
             // still hosts the search field) instead of reserving large-title space.
             .navigationBarTitleDisplayMode(.inline)
+            // iPhone: the bar would be empty — the inline field replaces it.
+            .toolbar(isCompactPhoneLayout ? .hidden : .automatic, for: .navigationBar)
             .modifier(ConditionalSearchable(
                 text: $searchModel.query,
-                enabled: !MacIntegration.isRunningOnMac,
+                enabled: !usesInlineSearchField,
                 prompt: "Search YouTube"
             ))
             .onSubmit(of: .search) {
@@ -332,6 +348,7 @@ struct HomeScreen: View {
     private func runSearch() async {
         let trimmed = searchModel.query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        isSearchFieldFocused = false
         if let existing = history.first(where: { $0.query == trimmed }) {
             existing.searchedAt = .now
         } else {
