@@ -13,8 +13,6 @@ struct LoginScreen: View {
                 if case .verifying = coordinator.state {
                     Color.black.opacity(0.3).ignoresSafeArea()
                     ProgressView("Finishing sign-in…")
-                        .tint(.white)
-                        .foregroundStyle(.white)
                         .padding()
                         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
                 }

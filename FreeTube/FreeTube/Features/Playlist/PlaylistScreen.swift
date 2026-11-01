@@ -56,6 +56,9 @@ struct PlaylistScreen: View {
                     // Cap the header column on wide layouts; the blurred backdrop below stays
                     // full-bleed because it's applied after the full-width frame.
                     .readableContentWidth()
+                    // The header sits on the darkened artwork in both themes, so its white
+                    // text, glass buttons and menus stay dark-styled.
+                    .environment(\.colorScheme, .dark)
                     .padding(.top, 12)
                     .padding(.bottom, 16)
                     .frame(maxWidth: .infinity, alignment: .leading)

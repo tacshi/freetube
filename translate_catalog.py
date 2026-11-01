@@ -19,6 +19,11 @@ CATALOG = Path(__file__).parent / "FreeTube" / "FreeTube" / "Localizable.xcstrin
 # catalog key). The value is a dict with "es", "ru", "fr", "de" entries.
 # "en" is always set to the source string itself (state translated).
 T = {
+    "Appearance": {"es": "Apariencia", "ru": "Оформление", "fr": "Apparence", "de": "Darstellung"},
+    "Theme": {"es": "Tema", "ru": "Тема", "fr": "Thème", "de": "Design"},
+    "System": {"es": "Sistema", "ru": "Как в системе", "fr": "Système", "de": "System"},
+    "Light": {"es": "Claro", "ru": "Светлая", "fr": "Clair", "de": "Hell"},
+    "Dark": {"es": "Oscuro", "ru": "Тёмная", "fr": "Sombre", "de": "Dunkel"},
     "“%@” will be permanently removed from your device.": {
         "es": "«%@» se eliminará permanentemente de tu dispositivo.",
         "ru": "«%@» будет окончательно удалён с устройства.",

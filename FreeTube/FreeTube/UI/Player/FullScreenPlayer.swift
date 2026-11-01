@@ -148,9 +148,8 @@ struct FullScreenPlayer: View {
                     .ignoresSafeArea()
             }
         }
-        // Light-content (white) status bar glyphs against the dark material; hidden while the
-        // video is full screen.
-        .preferredColorScheme(.dark)
+        // Follows the app theme (Settings → Appearance); only the video surface is always dark.
+        // Status bar hidden while the video is full screen.
         .statusBarHidden(isVideoFullScreen)
         .persistentSystemOverlays(isVideoFullScreen ? .hidden : .automatic)
         // Reset description state, (best-effort) prefetch the snippet, AND pop any pushed
@@ -198,6 +197,9 @@ struct FullScreenPlayer: View {
                 topInset: isVideoFullScreen ? windowControlsInset : 0,
                 onClose: closePlayer
             )
+            // The picture is always framed in black, so its controls, menus and status
+            // stay dark whatever the app theme.
+            .environment(\.colorScheme, .dark)
         }
         .frame(width: size.width, height: size.height)
     }
@@ -378,12 +380,13 @@ struct FullScreenPlayer: View {
         ZStack(alignment: .topLeading) {
             ChannelScreen(channelID: channel.id)
                 .toolbar(.hidden, for: .navigationBar)
-                // Solid black, matching the playlist push inside this same NavigationStack.
-                // We deliberately don't use `.thinMaterial` here — pushed destinations inside
-                // the popup body use opaque black for visual consistency with PlaylistScreen,
-                // while the panel-mode comments / related area keeps the popup's outer thinMaterial.
+                // Opaque system background, matching the playlist push inside this same
+                // NavigationStack. We deliberately don't use `.thinMaterial` here — pushed
+                // destinations inside the popup body are opaque for visual consistency with
+                // PlaylistScreen, while the panel-mode comments / related area keeps the popup's
+                // outer thinMaterial.
                 .background {
-                    Color.black.ignoresSafeArea()
+                    Color(.systemBackground).ignoresSafeArea()
                 }
 
             Button {
@@ -395,10 +398,10 @@ struct FullScreenPlayer: View {
             } label: {
                 Image(systemName: "chevron.left")
                     .font(.footnote.weight(.bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .frame(width: 32, height: 32)
                     .background(.ultraThinMaterial, in: Circle())
-                    .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 0.5))
+                    .overlay(Circle().stroke(Color.primary.opacity(0.18), lineWidth: 0.5))
             }
             .buttonStyle(.plain)
             .padding(.leading, 12)

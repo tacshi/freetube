@@ -19,6 +19,14 @@ struct SettingsScreen: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section("Appearance") {
+                    Picker("Theme", selection: Bindable(model).appearanceMode) {
+                        ForEach(AppearanceMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                }
+
                 Section {
                     Picker("Preferred quality", selection: Bindable(model).preferredQuality) {
                         ForEach(VideoQuality.allCases) { quality in
@@ -77,7 +85,7 @@ struct SettingsScreen: View {
                         showingResetConfirmation = true
                     } label: {
                         Label("Reset session", systemImage: "arrow.counterclockwise")
-                            .foregroundStyle(.white)
+                            .foregroundStyle(.primary)
                     }
                 } header: {
                     Text("Troubleshooting")

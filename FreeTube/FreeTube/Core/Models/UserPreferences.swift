@@ -38,13 +38,24 @@ struct UserPreferences {
     }
 }
 
+/// App theme, picked in Settings → Appearance. `.system` follows the device's Light / Dark setting.
 enum AppearanceMode: String, CaseIterable, Identifiable {
     case system, light, dark
     var id: String { rawValue }
 
-    var colorScheme: ColorScheme? {
+    var title: LocalizedStringResource {
         switch self {
-        case .system: return nil
+        case .system: return "System"
+        case .light: return "Light"
+        case .dark: return "Dark"
+        }
+    }
+
+    /// Applied to each window's `overrideUserInterfaceStyle` (`FreeTubeApp`); `.unspecified`
+    /// follows the system.
+    var userInterfaceStyle: UIUserInterfaceStyle {
+        switch self {
+        case .system: return .unspecified
         case .light: return .light
         case .dark: return .dark
         }
