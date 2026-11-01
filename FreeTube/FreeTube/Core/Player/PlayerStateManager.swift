@@ -44,6 +44,18 @@ final class PlayerStateManager {
     var fullScreenPresented: Bool = false
     /// Current playback speed (1.0 = normal). Persisted; set from the player's ⋯ menu.
     private(set) var playbackRate: Double = 1.0
+    /// Player gain, 0...1, changed with the hardware keyboard's ↑ / ↓ (`adjustVolume(by:)`).
+    ///
+    /// **`AVPlayer.volume`, not the system volume.** iOS has no public API to set the device
+    /// volume; the only route is driving the `UISlider` buried inside an `MPVolumeView`, which
+    /// relies on an undocumented view hierarchy that any iOS update can break, and is unreliable
+    /// in an iPad app on Mac. `AVPlayer.volume` is public and works everywhere, but it's a gain applied
+    /// on top of the system volume — it can turn the video down, never louder than the volume
+    /// buttons allow. Same model as YouTube on the web (its own slider under the OS volume).
+    /// Not persisted: every launch starts at full gain.
+    private(set) var volume: Float = 1 {
+        didSet { player.volume = volume }
+    }
 
     // MARK: Recommendations
     /// YouTube's recommendations for the current video (`MoreVideoInfosResponse`), shown under
@@ -313,6 +325,12 @@ final class PlayerStateManager {
         log.info("seekRelative(by: \(delta, privacy: .public)s)")
         let upperBound = duration > 0 ? duration : .greatestFiniteMagnitude
         seek(to: max(0, min(livePosition + delta, upperBound)))
+    }
+
+    /// Raises / lowers `volume` by `delta`, clamped to 0...1. Rounded to whole percent so
+    /// repeated 10% steps land on 0 and 100 exactly.
+    func adjustVolume(by delta: Float) {
+        volume = (min(max(volume + delta, 0), 1) * 100).rounded() / 100
     }
 
     func playNext() {

@@ -11,6 +11,9 @@ import SwiftUI
 /// Gestures on the video: tap shows / hides the controls (they auto-hide after a few seconds
 /// while playing), double-tap the leading / trailing half seeks −10s / +10s, drag sideways
 /// scrubs, pull down closes (or leaves full screen).
+///
+/// Hardware keyboard (`PlayerKeyCommand`, via `MacCommands`): ← / → seek like a double tap,
+/// ↑ / ↓ change the player volume.
 @available(iOS 17.0, *)
 struct PlayerControlsOverlay: View {
     @Environment(PlayerStateManager.self) private var player
@@ -32,6 +35,8 @@ struct PlayerControlsOverlay: View {
     @State private var scrubTarget: TimeInterval?
     @State private var isDraggingScrubber = false
     @State private var seekFlash: SeekFlash?
+    /// Token of the volume readout after an ↑ / ↓ key; `nil` hides it.
+    @State private var volumeFlash: UUID?
 
     private enum DragMode { case scrub, dismiss }
 
@@ -42,6 +47,7 @@ struct PlayerControlsOverlay: View {
     }
 
     private static let seekStep = 10
+    private static let volumeStep: Float = 0.1
     /// Seconds a drag across the full video width moves (capped at the video's length).
     private static let scrubSecondsPerWidth: TimeInterval = 120
     private static let autoHideDelay: Duration = .seconds(3)
@@ -60,6 +66,7 @@ struct PlayerControlsOverlay: View {
                     .allowsHitTesting(controlsVisible)
 
                 seekFlashOverlay
+                volumeFlashOverlay
                 if !isDraggingScrubber {
                     scrubTimeOverlay
                 }
@@ -72,6 +79,11 @@ struct PlayerControlsOverlay: View {
                 scheduleAutoHide()
             } else {
                 showControls()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .freetubePlayerKeyCommand)) { note in
+            if let command = note.object as? PlayerKeyCommand {
+                handleKey(command)
             }
         }
     }
@@ -224,6 +236,26 @@ struct PlayerControlsOverlay: View {
                     .onChanged { videoDragChanged($0, size: size) }
                     .onEnded { videoDragEnded($0) }
             )
+    }
+
+    /// Hardware-keyboard arrows (`PlayerKeyCommand`): ← / → seek like a double tap (same step,
+    /// same flash), ↑ / ↓ change the player volume and briefly show the level.
+    private func handleKey(_ command: PlayerKeyCommand) {
+        switch command {
+        case .seekBackward, .seekForward:
+            guard player.loadState == .readyToPlay else { return }
+            doubleTapSeek(forward: command == .seekForward)
+        case .volumeUp, .volumeDown:
+            player.adjustVolume(by: command == .volumeUp ? Self.volumeStep : -Self.volumeStep)
+            let token = UUID()
+            withAnimation(.easeOut(duration: 0.15)) { volumeFlash = token }
+            Task {
+                try? await Task.sleep(for: .seconds(0.8))
+                if volumeFlash == token {
+                    withAnimation(.easeOut(duration: 0.25)) { volumeFlash = nil }
+                }
+            }
+        }
     }
 
     private func doubleTapSeek(forward: Bool) {
@@ -381,6 +413,26 @@ struct PlayerControlsOverlay: View {
             .shadow(radius: 4)
             .padding(.horizontal, 40)
             .frame(maxWidth: .infinity, alignment: seekFlash.forward ? .trailing : .leading)
+            .allowsHitTesting(false)
+            .transition(.opacity)
+        }
+    }
+
+    /// Volume level after an ↑ / ↓ key, top-center — styled like the seek flash.
+    @ViewBuilder
+    private var volumeFlashOverlay: some View {
+        if volumeFlash != nil {
+            let percent = Int((player.volume * 100).rounded())
+            Label {
+                Text(verbatim: percent.formatted(.percent))
+            } icon: {
+                Image(systemName: percent == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill",
+                      variableValue: Double(player.volume))
+            }
+            .font(.title3.weight(.semibold).monospacedDigit())
+            .shadow(radius: 4)
+            .padding(.top, topInset + 56)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .allowsHitTesting(false)
             .transition(.opacity)
         }

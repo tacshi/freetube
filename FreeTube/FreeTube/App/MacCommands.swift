@@ -13,8 +13,9 @@ import SwiftUI
 ///    the Settings tab. (No separate Settings scene — Settings is one of the three tabs.)
 /// 2. **Navigate menu (⌘1 / ⌘F / ⌘2 / ⌘3)** — quick-jump to tab bar entries. ⌘F is the
 ///    standard "find" shortcut everywhere on Mac, so it maps to Search.
-/// 3. **Playback menu (Space, ⌘←/→, ⌘↑/↓)** — transport controls mirroring what
-///    `RemoteCommandCenter` wires for the lock screen on iOS.
+/// 3. **Playback menu (Space, ←/→, ↑/↓, ⌘←/→, ⌘↑/↓)** — transport controls mirroring what
+///    `RemoteCommandCenter` wires for the lock screen on iOS, plus YouTube-web-style plain
+///    arrows for seek and volume while the player is shown (`PlayerKeyCommand`).
 ///
 /// **Plumbing.** Tab switches go through `NotificationCenter` because the selected tab
 /// lives inside `RootView` (`@State`), which isn't reachable from a `Scene`-level
@@ -62,6 +63,23 @@ struct MacCommands: Commands {
 
             Divider()
 
+            // Plain arrows, like YouTube on the web — only while the player is on screen, so
+            // they keep scrolling / moving the cursor everywhere else. See `PlayerKeyCommand`.
+            Button("Forward 10 seconds") { postPlayerKey(.seekForward) }
+                .keyboardShortcut(.rightArrow, modifiers: [])
+                .disabled(!playerShown)
+            Button("Back 10 seconds") { postPlayerKey(.seekBackward) }
+                .keyboardShortcut(.leftArrow, modifiers: [])
+                .disabled(!playerShown)
+            Button("Volume Up") { postPlayerKey(.volumeUp) }
+                .keyboardShortcut(.upArrow, modifiers: [])
+                .disabled(!playerShown)
+            Button("Volume Down") { postPlayerKey(.volumeDown) }
+                .keyboardShortcut(.downArrow, modifiers: [])
+                .disabled(!playerShown)
+
+            Divider()
+
             Button("Skip Forward 15s") {
                 player.seekRelative(by: 15)
             }
@@ -88,6 +106,14 @@ struct MacCommands: Commands {
             .keyboardShortcut(.upArrow, modifiers: .command)
             .disabled(player.currentVideo == nil)
         }
+    }
+
+    private var playerShown: Bool {
+        player.fullScreenPresented && player.currentVideo != nil
+    }
+
+    private func postPlayerKey(_ command: PlayerKeyCommand) {
+        NotificationCenter.default.post(name: .freetubePlayerKeyCommand, object: command)
     }
 
     private func postTab(_ tab: RootView.Tab) {
