@@ -33,13 +33,18 @@ final class PictureInPictureModel {
     /// moves it into whichever surface is on screen.
     func layerView(for player: AVPlayer) -> PlayerLayerView {
         if let hostedView {
-            if hostedView.playerLayer.player !== player { hostedView.playerLayer.player = player }
+            if hostedView.player !== player { hostedView.player = player }
             return hostedView
         }
         let view = PlayerLayerView()
         view.backgroundColor = .black
-        view.playerLayer.player = player
+        view.player = player
         view.playerLayer.videoGravity = .resizeAspect
+        // A running PiP window is the one case where the picture must stay attached while the
+        // app is in the background.
+        view.keepsVideoInBackground = { [weak self] in
+            self?.controller?.isPictureInPictureActive ?? false
+        }
         hostedView = view
         attach(to: view.playerLayer)
         return view
@@ -72,9 +77,59 @@ final class PictureInPictureModel {
     }
 
     /// A view whose backing layer is an `AVPlayerLayer`.
+    ///
+    /// **Detaches the player while the app is in the background** (screen locked, or another
+    /// app in front) so the audio keeps playing, like a music app. iOS pauses a player whose
+    /// video is still attached to a layer when the app leaves the screen — even with the
+    /// `.playback` audio session and `audiovisualBackgroundPlaybackPolicy` set — and taking the
+    /// player off the layer is what Apple's guidance for background audio from video says to
+    /// do. The picture is re-attached on return.
     final class PlayerLayerView: UIView {
         override class var layerClass: AnyClass { AVPlayerLayer.self }
         // `layerClass` guarantees the type.
         var playerLayer: AVPlayerLayer { unsafeDowncast(layer, to: AVPlayerLayer.self) }
+
+        /// The player to show. Set this rather than `playerLayer.player`, so a SwiftUI update
+        /// that arrives in the background can't re-attach the picture.
+        var player: AVPlayer? {
+            didSet {
+                if !isInBackground { playerLayer.player = player }
+            }
+        }
+        /// Asked on entering the background; `true` leaves the picture attached.
+        var keepsVideoInBackground: @MainActor () -> Bool = { false }
+        private var isInBackground = false
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            // Selector-based observers need no removal: they end with the view.
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(didEnterBackground),
+                name: UIApplication.didEnterBackgroundNotification,
+                object: nil
+            )
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(willEnterForeground),
+                name: UIApplication.willEnterForegroundNotification,
+                object: nil
+            )
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) is not used")
+        }
+
+        @objc private func didEnterBackground() {
+            isInBackground = true
+            if !keepsVideoInBackground() { playerLayer.player = nil }
+        }
+
+        @objc private func willEnterForeground() {
+            isInBackground = false
+            if playerLayer.player !== player { playerLayer.player = player }
+        }
     }
 }

@@ -129,6 +129,10 @@ final class PlayerStateManager {
     private var timeControlStatusObservation: NSKeyValueObservation?
     private var statusCancellable: AnyCancellable?
     private var endObserver: NSObjectProtocol?
+    private var backgroundObserver: NSObjectProtocol?
+    /// The last transport command was `pause()` — as opposed to iOS pausing the player on its
+    /// own, which `resumeIfPausedByBackgrounding` undoes.
+    private var pauseRequested = false
     private var itemStatusObservation: NSKeyValueObservation?
     private var itemErrorLogObservation: NSObjectProtocol?
     private var playerErrorObservation: NSKeyValueObservation?
@@ -252,12 +256,14 @@ final class PlayerStateManager {
 
     func play() {
         log.info("play()")
+        pauseRequested = false
         player.play()
         isPlaying = true
     }
 
     func pause() {
         log.info("pause()")
+        pauseRequested = true
         player.pause()
         isPlaying = false
         savePosition(force: true)
@@ -847,7 +853,33 @@ final class PlayerStateManager {
         }
     }
 
+    /// Screen locked or app switched away while playing: keep the audio going, like a music
+    /// app. `PlayerLayerView` detaches the picture, which is what lets playback continue; if iOS
+    /// still pauses the player in the moment of the transition, this starts it again. A pause
+    /// that came through `pause()` (lock-screen controls, headphones, sleep timer) sets
+    /// `pauseRequested` and is left alone.
+    private func resumeIfPausedByBackgrounding() {
+        guard isPlaying, currentVideo != nil else { return }
+        let videoID = currentVideo?.id
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard let self, !self.pauseRequested, self.currentVideo?.id == videoID,
+                  UIApplication.shared.applicationState == .background,
+                  self.player.timeControlStatus == .paused else { return }
+            self.log.info("background: player was paused by the transition, resuming audio")
+            self.play()
+        }
+    }
+
     private func installObservers() {
+        backgroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.resumeIfPausedByBackgrounding() }
+        }
+
         // Fine-grained tick for captions only (`elapsed` ticks every 0.5s, too coarse for
         // caption timing). Does nothing while captions are off.
         captionObserver = player.addPeriodicTimeObserver(

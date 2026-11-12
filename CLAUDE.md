@@ -286,7 +286,11 @@ log.error("Stream extraction failed: \(error.localizedDescription, privacy: .pub
 
 `FFmpegSupport.ffmpeg(_:)` enters a C library with global state (the `+faststart` pass, the package's `setjmp`/`longjmp` hook); two calls at once crash. Every call goes through the `FFmpegRunner` actor, which chains each invocation behind the previous one. Never call `ffmpeg(_:)` directly.
 
-### 15.2–15.4 (removed)
+### 15.2 Linker warnings are off for the app target (`OTHER_LDFLAGS = -Wl,-w`)
+
+The prebuilt ffmpeg tool library (`libfftools.a`, from `FFmpeg-iOS-Lame`) has a zero-data section aligned to 32 KB; iOS pages are 16 KB, so every link printed "reducing alignment of section __DATA,__common from 0x8000 to 0x4000". It is harmless (page alignment is the most the OS can give) and can't be fixed without rebuilding ffmpeg; `-sectalign` only swaps it for another warning. `-w` silences **all** linker warnings for the target — if a link problem is suspected, remove the flag temporarily to see them.
+
+### 15.3–15.4 (removed)
 
 Python thread-pinning, the yt-dlp ffmpeg-merger hang, and yt-dlp PoT/n-cipher notes applied to the yt-dlp download stack, which no longer exists (§10).
 
