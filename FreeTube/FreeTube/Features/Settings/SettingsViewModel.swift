@@ -27,6 +27,16 @@ final class SettingsViewModel {
         set { preferences.syncWatchProgress = newValue }
     }
 
+    var downloadQuality: VideoQuality {
+        get { preferences.downloadQuality }
+        set { preferences.downloadQuality = newValue }
+    }
+
+    var allowCellularDownloads: Bool {
+        get { preferences.allowCellularDownloads }
+        set { preferences.allowCellularDownloads = newValue }
+    }
+
     // MARK: - Diagnostics
 
     /// Two-way binding for the "Save logs to file" toggle. Routes through

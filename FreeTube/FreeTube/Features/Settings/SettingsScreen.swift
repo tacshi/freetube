@@ -42,6 +42,19 @@ struct SettingsScreen: View {
                 }
 
                 Section {
+                    Picker("Download quality", selection: Bindable(model).downloadQuality) {
+                        ForEach(VideoQuality.downloadChoices) { quality in
+                            Text(verbatim: quality.rawValue).tag(quality)
+                        }
+                    }
+                    Toggle("Download over cellular", isOn: Bindable(model).allowCellularDownloads)
+                } header: {
+                    Text("Downloads")
+                } footer: {
+                    Text("Downloaded videos are saved as MP4 files. They also appear in the Files app, in the FreeTube folder.")
+                }
+
+                Section {
                     Toggle("Save logs to file", isOn: Bindable(model).logToFile)
                     if model.logToFile, let url = logWriter.currentLogFileURL {
                         LabeledContent("Current log") {

@@ -6,7 +6,7 @@ This file gives Claude Code the context, constraints, and conventions it must fo
 
 ## 1. What this project is
 
-**FreeTube iOS** — a native SwiftUI YouTube client that replicates the YouTube mobile app: home feed, search, playback, login, subscriptions, library, history, playlists, comments, likes. **Streaming only** — tapping a video plays it immediately, like the YouTube app; the app has no download feature (removed 2026-10-18, see §10).
+**FreeTube iOS** — a native SwiftUI YouTube client that replicates the YouTube mobile app: home feed, search, playback, login, subscriptions, library, history, playlists, comments, likes. Tapping a video plays it immediately by streaming, like the YouTube app. Videos can also be **downloaded on request** as MP4 files, for offline playback and for export to other apps (§10).
 
 **Distribution:** TestFlight internal, sideload, or personal use. **Not for public App Store submission.** Do not suggest changes that assume App Store distribution.
 
@@ -45,6 +45,7 @@ These come first. Violating them breaks the project.
 | Playback | `AVFoundation` / `AVKit` (`AVQueuePlayer`, `AVPlayerLayer`, `AVPictureInPictureController`, `AVRoutePickerView`) — custom controls, no `AVPlayerViewController` |
 | Login web view | `WebKit` (`WKWebView`, `WKHTTPCookieStore` against ephemeral `.nonPersistent()` data store) |
 | Images | `Kingfisher` |
+| Downloads | `URLSession` (HLS segments) + `kewlbear/FFmpeg-iOS-Lame` and `kewlbear/FFmpeg-iOS-Support` (ffmpeg, used only to repackage a downloaded stream into MP4 — never for playback) |
 | Secure storage | `Security` (raw Keychain via `KeychainHelper`) |
 | Persistence | `SwiftData` (`@Model`); `UserDefaults` for simple flags via `UserPreferences` |
 | Logging | `os.Logger` with subsystem `com.leshko.freetube` |
@@ -68,7 +69,9 @@ FreeTube/
 │   ├── Player/            # PlayerStateManager, QueueManager, PictureInPictureModel,
 │   │                      # AudioSessionConfigurator, NowPlayingCenter,
 │   │                      # RemoteCommandCenter, WatchProgressReporter, YouTubeResumeCache
-│   ├── Persistence/       # @Model types, PersistenceController, PersistenceWriter
+│   ├── Download/          # DownloadManager, DownloadJob, DownloadProgress, DownloadError, FFmpegRunner
+│   ├── Persistence/       # @Model types, PersistenceController, PersistenceWriter,
+│   │                      # DownloadsStore, DownloadEntry, DownloadMetadata, FileXattr
 │   └── Models/            # Domain types: Video, Channel, Playlist, Comment,
 │                          # VideoQuality, ErrorState, UserPreferences, YouTubeServiceError
 ├── Features/
@@ -79,13 +82,14 @@ FreeTube/
 │   ├── Playlist/          # PlaylistScreen + ViewModel
 │   ├── VideoDetail/       # CommentsSection + CommentsViewModel (shown in the player)
 │   ├── Account/           # AccountViewModel (used by LibraryScreen)
+│   ├── Downloads/         # DownloadsScreen (the Downloads tab)
 │   ├── Login/             # LoginScreen, LoginWebView
 │   └── Settings/          # SettingsScreen + ViewModel
 ├── UI/
 │   ├── Player/            # FullScreenPlayer, VideoSurface, PlayerControlsOverlay,
 │   │                      # AirPlayButton, PlaybackStatusOverlay, WindowControlsInsetReader
 │   ├── Components/        # VideoCard, VideoRow, VideoTileGrid, ChannelRow, CommentRow,
-│   │                      # PlaylistRow, AddToPlaylistSheet, ActivityShareSheet,
+│   │                      # PlaylistRow, AddToPlaylistSheet, ActivityShareSheet, DownloadButton,
 │   │                      # SectionHeader, LoadingView
 │   └── Modifiers/         # ErrorToastModifier, ReadableContentWidthModifier
 ├── Resources/
@@ -143,7 +147,7 @@ If a feature seems to need data without a clear mapping above, stop and ask befo
 
 ## 7. Playback pipeline (critical)
 
-**Tap → play, like the YouTube app.** `PlayerStateManager.resolveAndPlay` resolves a stream URL and hands it straight to `AVQueuePlayer`. Nothing is downloaded or written to disk.
+**Tap → play, like the YouTube app.** `PlayerStateManager.resolveAndPlay` resolves a stream URL and hands it straight to `AVQueuePlayer`. Playing never downloads or writes anything to disk. The one exception to resolving: a video the user already downloaded (§10) plays from its file — instant and offline, without captions — and falls back to streaming if the file fails.
 
 Stream sources, tried in order (`PlayerStateManager.StreamSource`):
 
@@ -200,9 +204,26 @@ If a URL resolves but the `AVPlayerItem` then fails (e.g. a 403), the item-statu
 
 ---
 
-## 10. Downloads — removed
+## 10. Downloads
 
-The app does not download videos. The whole download stack was removed on 2026-10-18 at the user's request: `Core/Download` (yt-dlp orchestration, background URL session, BG task), `Core/JavaScript` (JavaScriptCore `deno` bridge for yt-dlp), the Downloads and Link tabs, the `YoutubeDL-iOS` and `FFmpeg-iOS-Support` packages (and with them Python and ffmpeg), the download settings, and the "Download" / "Open in…" / "Remove downloaded file" actions. Don't reintroduce download-before-play or background prefetch downloads — playback streams (§7).
+Downloads are **explicit**: the user taps Download (the player's action row after Copy URL — `DownloadButton` — or a video's ⋯ menu). Playback never downloads (§7). Don't reintroduce download-before-play or background prefetch.
+
+**Pipeline** (`DownloadManager.run`):
+
+1. Resolve the same HLS stream the player uses (`StreamService`, `VISIONOS` client).
+2. `HLSDownloadService` reads the master playlist, picks the best **H.264** variant within Settings → Download quality (360p–1080p, default 720p), and fetches its video and audio segments (6 at a time, each retried) into two temporary files. YouTube's segments are MPEG-TS video and ADTS AAC audio.
+3. `FFmpegRunner` joins them with `ffmpeg -c copy -bsf:a aac_adtstoasc -movflags +faststart` — a repackaging, not a re-encode. ffmpeg is required: AVFoundation can't read TS / ADTS from local files.
+4. The MP4 lands in the **Documents root** as `<title> [<videoID>].mp4`, and `DownloadsStore` writes its metadata (`DownloadMetadata`: video ID, title, channel, thumbnail JPEG, duration) as an extended attribute on the file.
+
+**Storage is the file system — no SwiftData model.** `DownloadsStore` scans Documents (on launch, after changes, on return to foreground) and publishes `entries` / `filesByVideoID`. Documents is visible in the Files app, so files the user removes or adds there are simply reflected. Never store a stream URL in the metadata (§2.6).
+
+**Export** is the system share sheet on the file (`fileShareSheet` → `ActivityShareSheet`): Save to Files, AirDrop, Save Video (Photos — hence `NSPhotoLibraryAddUsageDescription`), or any app that opens videos. Rows in `DownloadsScreen` can also be dragged out on iPad, and on Mac there's Show in Finder.
+
+**State for UI:** `DownloadManager.jobs` (queued / downloading / saving / failed — unfinished downloads only; two run at once) and `progressByVideoID`, kept separate so only progress views re-render per tick. A finished download is a file, not a job.
+
+**Why not direct files or yt-dlp:** YouTube's direct `videoplayback` formats are Proof-of-Origin gated — without a token the CDN serves about the first minute, then 403s. That is what the old yt-dlp stack (Python, JavaScriptCore `deno` bridge; removed 2026-10-18) fetched, and by 2026-11 it got 360p at best. The HLS segments have no such gate. Don't bring yt-dlp back for this.
+
+**Limits:** live streams can't be downloaded (their playlist never ends); downloads run while the app is in the foreground (or playing audio) — a suspended app resumes the download when it returns; no captions in the file.
 
 ---
 
@@ -261,9 +282,13 @@ log.error("Stream extraction failed: \(error.localizedDescription, privacy: .pub
 
 ## 15. Critical workarounds (read before refactoring `Core/`)
 
-### 15.1–15.4 (removed)
+### 15.1 ffmpeg calls must be serialized
 
-Python thread-pinning, ffmpeg serialization, the yt-dlp ffmpeg-merger hang, and yt-dlp PoT/n-cipher notes applied to the download stack, which no longer exists (§10).
+`FFmpegSupport.ffmpeg(_:)` enters a C library with global state (the `+faststart` pass, the package's `setjmp`/`longjmp` hook); two calls at once crash. Every call goes through the `FFmpegRunner` actor, which chains each invocation behind the previous one. Never call `ffmpeg(_:)` directly.
+
+### 15.2–15.4 (removed)
+
+Python thread-pinning, the yt-dlp ffmpeg-merger hang, and yt-dlp PoT/n-cipher notes applied to the yt-dlp download stack, which no longer exists (§10).
 
 ### 15.5 AVQueuePlayer + `replaceCurrentItem` is a no-op when queue is empty
 
@@ -291,7 +316,7 @@ Anything inside `Menu` bodies in the player fires hundreds of times per second u
 
 ### 15.11 (removed)
 
-The JavaScriptCore `deno` bridge for yt-dlp went away with the download stack (§10).
+The JavaScriptCore `deno` bridge for yt-dlp went away with the yt-dlp download stack (§10).
 
 ### 15.12 `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` runs anything unannotated on main
 
@@ -336,6 +361,7 @@ Current state of the implementation. Items marked ✓ are shipped.
   - Localization en / es / ru / fr / de ✓
   - iPad layout: readable-width columns + tile grid for Home and search ✓
   - Custom video controls (YouTube-style overlay, PiP, AirPlay, full screen, speed / subtitles / audio menu) ✓
+  - Downloads to MP4 with offline playback and export to other apps (§10) ✓
 
 ---
 
@@ -378,7 +404,7 @@ If asked to "make it more robust" or "production-ready", point to these realitie
 - YouTube can change its internal API at any time and silently break extraction. There is no SLA.
 - Cookies expire (typically 1-2 weeks of inactivity); the user will need to re-login.
 - Streaming depends on YouTube continuing to serve PoT-free HLS to the `VISIONOS` client. If that stops, update the client context (compare with yt-dlp's `INNERTUBE_CLIENTS` in `yt_dlp/extractor/youtube/_base.py`) — see §7 for how to verify with `curl`.
-- No offline playback — the app streams only (§10).
+- Downloads depend on the same PoT-free HLS as playback, and on its segments staying MPEG-TS / fMP4 that ffmpeg can repackage (§10).
 - IP-level rate limiting from YouTube can hit users on shared networks (CGNAT, VPN). No client-side fix.
 - This codebase intentionally does not implement App Store evasion techniques. Sideload distribution is the assumption.
 - HLS variant selection is left to AVPlayer's adaptive bitrate logic; `preferredQuality.heightCap` only caps it (`preferredMaximumResolution`), it can't force a minimum.

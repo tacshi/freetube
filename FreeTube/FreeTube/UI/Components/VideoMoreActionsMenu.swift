@@ -10,6 +10,8 @@ import OSLog
 ///
 /// Auth-gating rules (per product spec):
 ///   - Open in browser, Copy URL: always shown
+///   - Download (or, once downloaded, Share video file… / Remove download): always shown,
+///     except Download on live streams
 ///   - Add to favorites / Remove from favorites: shown only when signed in
 ///   - Add to playlist: shown only when signed in
 ///   - Not interested: shown only where the hosting feed set `notInterestedAction` and YouTube
@@ -23,6 +25,8 @@ struct VideoMoreActionsMenu: View {
     @Query private var favorites: [FavoriteVideo]
 
     @State private var addToPlaylistVideo: Video?
+    @State private var downloads = DownloadManager.shared
+    @State private var sharedFile: URL?
 
     var body: some View {
         Menu {
@@ -38,6 +42,7 @@ struct VideoMoreActionsMenu: View {
         .sheet(item: $addToPlaylistVideo) { video in
             AddToPlaylistSheet(videoID: video.id, videoTitle: video.title)
         }
+        .fileShareSheet($sharedFile)
     }
 
     @ViewBuilder
@@ -52,6 +57,7 @@ struct VideoMoreActionsMenu: View {
         } label: {
             Label("Copy URL", systemImage: "link")
         }
+        downloadItems
         if isSignedIn {
             Divider()
             Button {
@@ -75,6 +81,35 @@ struct VideoMoreActionsMenu: View {
                 notInterestedAction.perform(video)
             } label: {
                 Label("Not interested", systemImage: "nosign")
+            }
+        }
+    }
+
+    /// Download, or — once the video is a file — share it to another app / remove it.
+    @ViewBuilder
+    private var downloadItems: some View {
+        if let file = downloads.localFile(for: video.id) {
+            Button {
+                sharedFile = file
+            } label: {
+                Label("Share video file…", systemImage: "square.and.arrow.up")
+            }
+            Button(role: .destructive) {
+                downloads.delete(videoID: video.id)
+            } label: {
+                Label("Remove download", systemImage: "trash")
+            }
+        } else if let job = downloads.job(for: video.id), job.isActive {
+            Button {
+                downloads.cancel(videoID: video.id)
+            } label: {
+                Label("Cancel download", systemImage: "xmark")
+            }
+        } else if !video.isLive {
+            Button {
+                downloads.download(video)
+            } label: {
+                Label("Download", systemImage: "arrow.down.circle")
             }
         }
     }

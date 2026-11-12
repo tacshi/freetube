@@ -11,7 +11,7 @@ import SwiftUI
 /// 1. **Settings (⌘,)** — `CommandGroup(replacing: .appSettings)` is the standard slot;
 ///    we post a notification that `RootView` reads to switch its `TabView` selection to
 ///    the Settings tab. (No separate Settings scene — Settings is one of the three tabs.)
-/// 2. **Navigate menu (⌘1 / ⌘F / ⌘2 / ⌘3)** — quick-jump to tab bar entries. ⌘F is the
+/// 2. **Navigate menu (⌘1 / ⌘F / ⌘2 / ⌘3)** (Home / Find / Library / Downloads) — quick-jump to tab bar entries. ⌘F is the
 ///    standard "find" shortcut everywhere on Mac, so it maps to Search.
 /// 3. **Playback menu (Space, ←/→, ↑/↓, ⌘←/→, ⌘↑/↓)** — transport controls mirroring what
 ///    `RemoteCommandCenter` wires for the lock screen on iOS, plus YouTube-web-style plain
@@ -50,6 +50,8 @@ struct MacCommands: Commands {
                 .keyboardShortcut("f", modifiers: .command)
             Button("Library") { postTab(.library) }
                 .keyboardShortcut("2", modifiers: .command)
+            Button("Downloads") { postTab(.downloads) }
+                .keyboardShortcut("3", modifiers: .command)
         }
 
         // 3. Playback menu — same controls as the lock-screen remote on iOS. Disabled

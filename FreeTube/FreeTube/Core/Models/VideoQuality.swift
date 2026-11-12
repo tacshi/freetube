@@ -28,4 +28,8 @@ enum VideoQuality: String, CaseIterable, Identifiable, Sendable {
         case .audioOnly: return 0
         }
     }
+
+    /// Choices for Settings → Download quality. YouTube's HLS has H.264 (what downloads use,
+    /// so the files play anywhere) up to 1080p.
+    static let downloadChoices: [VideoQuality] = [.p360, .p480, .p720, .p1080]
 }

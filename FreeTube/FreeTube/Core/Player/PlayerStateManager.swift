@@ -453,18 +453,30 @@ final class PlayerStateManager {
     private func resolveAndPlay(video: Video, autoplay: Bool) async {
         log.info("resolveAndPlay: start for \(video.id, privacy: .public)")
         // **Tap → play, like the YouTube app.** Resolve an HLS URL (`StreamService`) and hand it
-        // straight to `AVPlayer` — no download, nothing written to disk. If the item later fails,
+        // straight to `AVPlayer` — playing never downloads anything. A video the user already
+        // downloaded (`DownloadManager`) plays from its file instead. If the item later fails,
         // `retryStream(after:)` re-resolves once.
         streamRetriedVideoID = nil
         async let localPlayback = PersistenceWriter.shared.savedPlayback(videoID: video.id)
-        let stream: ResolvedStream
-        do {
-            stream = try await streams.resolveStream(videoID: video.id)
-        } catch {
-            guard currentVideo?.id == video.id else { return }
-            log.error("resolveAndPlay: no stream for \(video.id, privacy: .public): \(String(describing: error), privacy: .public)")
-            loadState = .failed(Self.failureMessage(for: error))
-            return
+        let playbackURL: URL
+        var captions: [CaptionTrack] = []
+        if let file = DownloadManager.shared.localFile(for: video.id) {
+            // Downloaded: play the file — instant, and it works offline. No captions (they come
+            // with the stream lookup). If the file turns out unplayable, `retryStream(after:)`
+            // falls back to streaming.
+            log.info("resolveAndPlay: playing downloaded file for \(video.id, privacy: .public)")
+            playbackURL = file
+        } else {
+            do {
+                let stream = try await streams.resolveStream(videoID: video.id)
+                playbackURL = stream.hlsURL
+                captions = stream.captions
+            } catch {
+                guard currentVideo?.id == video.id else { return }
+                log.error("resolveAndPlay: no stream for \(video.id, privacy: .public): \(String(describing: error), privacy: .public)")
+                loadState = .failed(Self.failureMessage(for: error))
+                return
+            }
         }
         // `load(_:)` may have moved on to another video while we were resolving; don't clobber it.
         guard currentVideo?.id == video.id else {
@@ -477,12 +489,12 @@ final class PlayerStateManager {
             duration: video.duration
         )
         guard currentVideo?.id == video.id else { return }
-        loadItem(makeItem(url: stream.hlsURL))
+        loadItem(makeItem(url: playbackURL))
         itemVideoID = video.id
         if preferences.syncWatchProgress, case .loggedIn = AuthState.shared.status {
             watchReporter.begin(videoID: video.id, at: resumeAt ?? 0)
         }
-        captionTracks = stream.captions
+        captionTracks = captions
         autoSelectCaption()
         lastSavedPosition = resumeAt ?? 0
         if let resumeAt {

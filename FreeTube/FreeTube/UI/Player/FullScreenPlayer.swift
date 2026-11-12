@@ -598,7 +598,7 @@ struct FullScreenPlayer: View {
 
     // MARK: - Transport
 
-    /// Row under the video: the video's actions (Like, Save, Copy URL) and — stacked layout only —
+    /// Row under the video: the video's actions (Like, Save, Copy URL, Download) and — stacked layout only —
     /// the related / comments toggle. Play/pause, seeking and close live on the video itself
     /// (`PlayerControlsOverlay`), so they aren't repeated here;
     /// previous / next are covered by the related list and the lock-screen remote.
@@ -626,6 +626,9 @@ struct FullScreenPlayer: View {
                         UIPasteboard.general.string = url.absoluteString
                         flashCopied()
                     }
+                }
+                if !video.isLive {
+                    DownloadButton(video: video)
                 }
             }
             if showsPanelToggle {

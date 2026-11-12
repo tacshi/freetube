@@ -25,3 +25,18 @@ struct ActivityShareSheet: UIViewControllerRepresentable {
         // Nothing to update — the activity controller doesn't accept post-creation changes.
     }
 }
+
+extension View {
+    /// Presents the system share sheet for a file while `url` is non-nil — how downloaded videos
+    /// are exported: Save to Files, AirDrop, Save Video (Photos), or any app that opens videos.
+    func fileShareSheet(_ url: Binding<URL?>) -> some View {
+        sheet(isPresented: Binding(
+            get: { url.wrappedValue != nil },
+            set: { if !$0 { url.wrappedValue = nil } }
+        )) {
+            if let file = url.wrappedValue {
+                ActivityShareSheet(activityItems: [file])
+            }
+        }
+    }
+}

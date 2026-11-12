@@ -27,6 +27,17 @@ struct UserPreferences {
     /// it only talks to YouTube, only when signed in, and can be turned off in Settings.
     @AppStorage("syncWatchProgress") var syncWatchProgress: Bool = true
 
+    /// Picture size videos are downloaded at (`DownloadManager`): the best H.264 variant up to
+    /// this height. 720p is a sensible size-to-quality default for files meant to be kept.
+    @AppStorage("downloadQuality") var downloadQualityRaw: String = VideoQuality.p720.rawValue
+    /// When `false`, downloads only run on Wi-Fi.
+    @AppStorage("allowCellularDownloads") var allowCellularDownloads: Bool = true
+
+    var downloadQuality: VideoQuality {
+        get { VideoQuality(rawValue: downloadQualityRaw) ?? .p720 }
+        nonmutating set { downloadQualityRaw = newValue.rawValue }
+    }
+
     var preferredQuality: VideoQuality {
         get { VideoQuality(rawValue: preferredQualityRaw) ?? .auto }
         nonmutating set { preferredQualityRaw = newValue.rawValue }

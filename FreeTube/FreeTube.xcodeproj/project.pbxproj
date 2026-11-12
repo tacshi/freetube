@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		AC591D782FB9E26E009EE538 /* YouTubeKit in Frameworks */ = {isa = PBXBuildFile; productRef = AC591D772FB9E26E009EE538 /* YouTubeKit */; };
+		AC591F052FB9F300009EE538 /* FFmpeg-iOS-Lame in Frameworks */ = {isa = PBXBuildFile; productRef = AC591F042FB9F300009EE538 /* FFmpeg-iOS-Lame */; };
+		AC591F022FB9F300009EE538 /* FFmpeg-iOS-Support in Frameworks */ = {isa = PBXBuildFile; productRef = AC591F012FB9F300009EE538 /* FFmpeg-iOS-Support */; };
 		AC591DA82FB9E35C009EE538 /* Kingfisher in Frameworks */ = {isa = PBXBuildFile; productRef = AC591DA72FB9E35C009EE538 /* Kingfisher */; };
 /* End PBXBuildFile section */
 
@@ -54,6 +56,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AC591F052FB9F300009EE538 /* FFmpeg-iOS-Lame in Frameworks */,
+				AC591F022FB9F300009EE538 /* FFmpeg-iOS-Support in Frameworks */,
 				AC591DA82FB9E35C009EE538 /* Kingfisher in Frameworks */,
 				AC591D782FB9E26E009EE538 /* YouTubeKit in Frameworks */,
 			);
@@ -100,6 +104,8 @@
 			name = FreeTube;
 			packageProductDependencies = (
 				AC591D772FB9E26E009EE538 /* YouTubeKit */,
+				AC591F042FB9F300009EE538 /* FFmpeg-iOS-Lame */,
+				AC591F012FB9F300009EE538 /* FFmpeg-iOS-Support */,
 				AC591DA72FB9E35C009EE538 /* Kingfisher */,
 			);
 			productName = FreeTube;
@@ -134,6 +140,8 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				AC591D762FB9E26E009EE538 /* XCRemoteSwiftPackageReference "YouTubeKit" */,
+				AC591F032FB9F300009EE538 /* XCRemoteSwiftPackageReference "FFmpeg-iOS-Lame" */,
+				AC591F002FB9F300009EE538 /* XCRemoteSwiftPackageReference "FFmpeg-iOS-Support" */,
 				AC591DA62FB9E35C009EE538 /* XCRemoteSwiftPackageReference "Kingfisher" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -306,6 +314,7 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "FreeTube needs camera access to let you take a photo for your profile picture.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "FreeTube saves downloaded videos to your photo library when you choose Save Video.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
@@ -350,6 +359,7 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "FreeTube needs camera access to let you take a photo for your profile picture.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "FreeTube saves downloaded videos to your photo library when you choose Save Video.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
@@ -417,6 +427,22 @@
 				minimumVersion = 8.9.0;
 			};
 		};
+		AC591F002FB9F300009EE538 /* XCRemoteSwiftPackageReference "FFmpeg-iOS-Support" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/kewlbear/FFmpeg-iOS-Support";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.0.2;
+			};
+		};
+		AC591F032FB9F300009EE538 /* XCRemoteSwiftPackageReference "FFmpeg-iOS-Lame" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/kewlbear/FFmpeg-iOS-Lame";
+			requirement = {
+				kind = exactVersion;
+				version = "0.0.6-b20230730-000000";
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -429,6 +455,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AC591DA62FB9E35C009EE538 /* XCRemoteSwiftPackageReference "Kingfisher" */;
 			productName = Kingfisher;
+		};
+		AC591F012FB9F300009EE538 /* FFmpeg-iOS-Support */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AC591F002FB9F300009EE538 /* XCRemoteSwiftPackageReference "FFmpeg-iOS-Support" */;
+			productName = "FFmpeg-iOS-Support";
+		};
+		AC591F042FB9F300009EE538 /* FFmpeg-iOS-Lame */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AC591F032FB9F300009EE538 /* XCRemoteSwiftPackageReference "FFmpeg-iOS-Lame" */;
+			productName = "FFmpeg-iOS-Lame";
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

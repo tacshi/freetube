@@ -2,9 +2,10 @@ import SwiftUI
 
 /// Top-level tabbed shell.
 ///
-/// Tab layout (3):
+/// Tab layout (4):
 /// - Home (home video feed, with the search field and recent searches in the same screen)
 /// - Library (subsumes the former Account + Subscriptions tabs; includes Favorites/Recents/Playlists/Login)
+/// - Downloads (videos saved as files, and downloads in progress — badge shows how many are running)
 /// - Settings (preferences, quality, reset-session)
 ///
 /// **Playback works like the YouTube app:** tapping a video presents `FullScreenPlayer` as a
@@ -14,9 +15,10 @@ import SwiftUI
 struct RootView: View {
     @Environment(PlayerStateManager.self) private var player
     @State private var selectedTab: Tab = .home
+    @State private var downloads = DownloadManager.shared
 
     enum Tab: Hashable {
-        case home, library, settings
+        case home, library, downloads, settings
     }
 
     var body: some View {
@@ -30,6 +32,11 @@ struct RootView: View {
             LibraryScreen()
                 .tabItem { Label("Library", systemImage: "play.square.stack") }
                 .tag(Tab.library)
+
+            DownloadsScreen()
+                .tabItem { Label("Downloads", systemImage: "arrow.down.circle.fill") }
+                .badge(downloads.activeCount)
+                .tag(Tab.downloads)
 
             SettingsScreen()
                 .tabItem { Label("Settings", systemImage: "gearshape.fill") }
