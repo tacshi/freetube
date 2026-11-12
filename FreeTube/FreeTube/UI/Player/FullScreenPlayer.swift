@@ -649,9 +649,11 @@ struct FullScreenPlayer: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
+            // Icon only: five actions don't fit a phone's width with their titles. The title
+            // stays as the accessibility label.
             Label(title, systemImage: systemImage)
-                .font(.subheadline.weight(.medium))
-                .lineLimit(1)
+                .labelStyle(.iconOnly)
+                .font(.title3)
                 .frame(maxWidth: .infinity, minHeight: 36)
                 .contentShape(Rectangle())
         }

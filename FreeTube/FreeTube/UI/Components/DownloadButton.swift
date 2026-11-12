@@ -7,7 +7,8 @@ import SwiftUI
 /// - downloaded → **Downloaded** (tap for Share / Remove)
 /// - failed → **Retry**
 ///
-/// Styled to match the other actions in `FullScreenPlayer`'s row (plain icon + label).
+/// Icon only, like the other actions in `FullScreenPlayer`'s row; the titles are the
+/// accessibility labels. While downloading, the icon is a ring that fills with the progress.
 @available(iOS 17.0, *)
 struct DownloadButton: View {
     let video: Video
@@ -78,8 +79,20 @@ struct DownloadButton: View {
         case .saving:
             label(Text("Saving…"), systemImage: "arrow.down.circle.dotted")
         default:
-            let percent = Int(manager.progress(for: video.id) * 100)
-            label(Text(verbatim: "\(percent)%").monospacedDigit(), systemImage: "arrow.down.circle.dotted")
+            let progress = manager.progress(for: video.id)
+            ZStack {
+                Circle().stroke(.tertiary, lineWidth: 2)
+                Circle()
+                    .trim(from: 0, to: progress)
+                    .stroke(.primary, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                Image(systemName: "stop.fill").font(.system(size: 8))
+            }
+            .frame(width: 22, height: 22)
+            .frame(maxWidth: .infinity, minHeight: 36)
+            .contentShape(Rectangle())
+            .accessibilityLabel(Text("Downloading"))
+            .accessibilityValue(Text(verbatim: "\(Int(progress * 100))%"))
         }
     }
 
@@ -89,10 +102,10 @@ struct DownloadButton: View {
         } icon: {
             Image(systemName: systemImage)
         }
-        .font(.subheadline.weight(.medium))
+        .labelStyle(.iconOnly)
+        .font(.title3)
         // A `Menu` tints its label; keep it the same color as the row's plain buttons.
         .foregroundStyle(.primary)
-        .lineLimit(1)
         .frame(maxWidth: .infinity, minHeight: 36)
         .contentShape(Rectangle())
     }
