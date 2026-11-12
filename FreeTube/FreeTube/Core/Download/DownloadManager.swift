@@ -196,8 +196,8 @@ final class DownloadManager {
                 videoTotal: plan.videoSegments.count,
                 audioTotal: plan.audioSegments?.count ?? 0,
                 videoShare: plan.audioSegments == nil ? 1 : videoShare
-            ) { fraction in
-                Task { @MainActor in self?.publishProgress(fraction, for: videoID) }
+            ) { [weak self] fraction in
+                Task { @MainActor [weak self] in self?.publishProgress(fraction, for: videoID) }
             }
             try await withThrowingTaskGroup(of: Void.self) { group in
                 group.addTask {

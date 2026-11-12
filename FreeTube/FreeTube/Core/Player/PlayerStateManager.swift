@@ -433,7 +433,7 @@ final class PlayerStateManager {
 
         presentationSizeObservation = item.observe(\.presentationSize, options: [.new, .initial]) { [weak self] item, _ in
             let size = item.presentationSize
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 guard let self, self.player.currentItem === item else { return }
                 let height = size == .zero ? nil : Int(min(size.width, size.height))
                 if height != self.playingHeight { self.playingHeight = height }
@@ -981,7 +981,7 @@ final class PlayerStateManager {
         guard let url = video.thumbnailURL else { return }
         KingfisherManager.shared.retrieveImage(with: url) { [weak self, videoID = video.id] result in
             guard case .success(let value) = result else { return }
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 guard let self else { return }
                 // Drop the result if the user switched videos while the fetch was inflight.
                 guard self.currentVideo?.id == videoID else { return }

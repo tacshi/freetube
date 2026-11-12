@@ -10,7 +10,9 @@ import Foundation
 /// Unicode-canonical `String.utf8`. The two diverge for paths with combining characters
 /// (most non-ASCII Unicode). The `fileSystemRepresentation` accessor produces the right
 /// bytes; passing `URL.path` directly would silently miss files with accented names.
-enum FileXattr {
+///
+/// `nonisolated`: plain syscalls, called from `DownloadsStore`'s off-main tasks.
+nonisolated enum FileXattr {
     /// Read the value of an extended attribute. Returns nil for "attribute doesn't exist"
     /// (`ENOATTR`) as well as for any other read failure — the caller treats both the same.
     static func read(key: String, at url: URL) -> Data? {

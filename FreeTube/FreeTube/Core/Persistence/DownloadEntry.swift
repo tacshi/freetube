@@ -3,8 +3,10 @@ import Foundation
 /// One downloaded file, from `DownloadsStore`'s scan of the Documents folder. `metadata == nil`
 /// means the file has no xattr of ours (dropped in through the Files app, say) — it still shows,
 /// with its file name as the title.
+///
+/// `nonisolated`: built and sorted by `DownloadsStore`'s off-main scan (CLAUDE.md §15.12).
 @available(iOS 17.0, *)
-struct DownloadEntry: Identifiable, Sendable {
+nonisolated struct DownloadEntry: Identifiable, Sendable {
     let fileURL: URL
     let metadata: DownloadMetadata?
     let fileSize: Int64
@@ -24,7 +26,7 @@ struct DownloadEntry: Identifiable, Sendable {
 
     /// The video this file holds, for handing to `PlayerStateManager.load` — which plays the
     /// file instead of streaming when one exists for the ID.
-    var video: Video {
+    @MainActor var video: Video {
         Video(
             id: videoID,
             title: title,

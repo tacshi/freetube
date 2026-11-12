@@ -9,7 +9,9 @@ import Foundation
 ///
 /// **What's NOT stored here**: the file URL and size, which come from the file system at read
 /// time. Never a stream URL (CLAUDE.md §2.6).
-struct DownloadMetadata: Codable, Sendable {
+///
+/// `nonisolated` so it encodes and decodes on `DownloadsStore`'s off-main tasks.
+nonisolated struct DownloadMetadata: Codable, Sendable {
     /// YouTube video ID.
     let videoID: String
     let title: String

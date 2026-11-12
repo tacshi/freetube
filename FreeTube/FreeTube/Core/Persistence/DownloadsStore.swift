@@ -54,7 +54,7 @@ final class DownloadsStore {
     func reload() async {
         scanGeneration += 1
         let generation = scanGeneration
-        let scanned = await Task.detached(priority: .utility) { Self.scanDirectory() }.value
+        let scanned = await Task.detached(priority: .utility) { await Self.scanDirectory() }.value
         guard generation == scanGeneration else { return }
         apply(scanned)
     }
@@ -64,16 +64,19 @@ final class DownloadsStore {
         filesByVideoID = Dictionary(scanned.map { ($0.videoID, $0.fileURL) }, uniquingKeysWith: { first, _ in first })
     }
 
-    private nonisolated static func scanDirectory() -> [DownloadEntry] {
+    private nonisolated static func scanDirectory() async -> [DownloadEntry] {
         let fileURLs = (try? FileManager.default.contentsOfDirectory(
             at: downloadsDirectory(),
             includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey],
             options: [.skipsHiddenFiles]
         )) ?? []
-        return fileURLs
-            .filter { ["mp4", "m4v", "mov", "m4a", "mp3"].contains($0.pathExtension.lowercased()) }
-            .compactMap(makeEntry(from:))
-            .sorted { $0.sortDate > $1.sortDate }
+        var entries: [DownloadEntry] = []
+        for url in fileURLs where ["mp4", "m4v", "mov", "m4a", "mp3"].contains(url.pathExtension.lowercased()) {
+            if let entry = await makeEntry(from: url) {
+                entries.append(entry)
+            }
+        }
+        return entries.sorted { $0.sortDate > $1.sortDate }
     }
 
     // MARK: - Write
@@ -95,7 +98,7 @@ final class DownloadsStore {
                 downloadedAt: .now,
                 originalURL: nil,
                 thumbnailData: thumbnail,
-                duration: Self.readDuration(at: fileURL),
+                duration: await Self.readDuration(at: fileURL),
                 thumbnailURL: thumbnailURL?.absoluteString
             )
             if let blob = try? PropertyListEncoder().encode(metadata) {
@@ -128,25 +131,31 @@ final class DownloadsStore {
         URL.documentsDirectory
     }
 
-    private nonisolated static func makeEntry(from url: URL) -> DownloadEntry? {
+    private nonisolated static func makeEntry(from url: URL) async -> DownloadEntry? {
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path) else { return nil }
         let metadata = FileXattr.read(key: metadataXattrKey, at: url)
             .flatMap { try? PropertyListDecoder().decode(DownloadMetadata.self, from: $0) }
+        // Files without a stored duration (dropped in by the user, or written by the old
+        // download stack) get it read from the file instead.
+        var duration = metadata?.duration
+        if duration == nil {
+            duration = await readDuration(at: url)
+        }
         return DownloadEntry(
             fileURL: url,
             metadata: metadata,
             fileSize: (attributes[.size] as? NSNumber)?.int64Value ?? 0,
             modifiedAt: (attributes[.modificationDate] as? Date) ?? .distantPast,
-            duration: metadata?.duration ?? readDuration(at: url)
+            duration: duration
         )
     }
 
-    /// Synchronous `AVURLAsset.duration` read. Deprecated API but appropriate here: the file is
-    /// local, the call only walks the moov atom (a few KB of header), and it's only invoked
-    /// from detached `.utility` tasks.
-    nonisolated static func readDuration(at url: URL) -> TimeInterval? {
-        let seconds = AVURLAsset(url: url).duration.seconds
-        return (seconds.isFinite && seconds > 0) ? seconds : nil
+    /// Playback length of a local file, or nil when it can't be read. Only walks the moov atom
+    /// (a few KB of header); called from detached `.utility` tasks.
+    nonisolated static func readDuration(at url: URL) async -> TimeInterval? {
+        guard let seconds = try? await AVURLAsset(url: url).load(.duration).seconds,
+              seconds.isFinite, seconds > 0 else { return nil }
+        return seconds
     }
 
     /// Downscale + JPEG-compress the thumbnail so it fits comfortably in an xattr value.

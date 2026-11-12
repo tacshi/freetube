@@ -274,7 +274,7 @@ final class ChannelService: ChannelServicing {
         guard let content = response.channelContentStore[.playlists] as? (any ListableChannelContent) else {
             return ChannelTab(items: [], continuationToken: nil)
         }
-        let playlists = content.items.compactMap { ($0 as? YTPlaylist).map(Mappers.playlist(from:)) }
+        let playlists = content.items.compactMap { $0 as? YTPlaylist }.map { Mappers.playlist(from: $0) }
         let continuation = response.channelContentContinuationStore[.playlists] ?? nil
         return ChannelTab(items: playlists, continuationToken: continuation)
     }
