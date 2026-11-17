@@ -20,7 +20,7 @@
 	     entitlement stops the app from launching, so never sign the Mac build by hand. -->
 	<key>keychain-access-groups</key>
 	<array>
-		<string>$(AppIdentifierPrefix)com.leshko.freetube</string>
+		<string>$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	</array>
 </dict>
 </plist>

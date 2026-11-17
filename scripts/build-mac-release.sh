@@ -4,12 +4,11 @@
 #
 #   scripts/build-mac-release.sh                  # version from the Xcode project
 #   scripts/build-mac-release.sh 1.2.0            # another version
-#   scripts/build-mac-release.sh 1.2.0 --upload   # and attach it to the draft release v1.2.0
 #   scripts/build-mac-release.sh --skip-notarize  # Developer ID signed, not notarized (local)
 #
-# Produces dist/FreeTube-<version>.dmg: a universal (arm64 + x86_64) app, Developer ID
-# signed with the hardened runtime, notarized and stapled, in a disk image that is itself
-# signed, notarized and stapled.
+# Produces dist/FreeTube-<version>.dmg: a universal (arm64 + x86_64) app, Developer ID signed
+# with the hardened runtime, notarized and stapled, in a disk image that is itself signed,
+# notarized and stapled. Publishing it is scripts/publish.sh, which runs this.
 #
 # Requires:
 #   - Xcode signed in to the team's Apple account (Settings → Accounts). The export asks Apple
@@ -21,8 +20,6 @@
 #       xcrun notarytool store-credentials FreeTube \
 #         --apple-id <apple-id> --team-id <TEAMID> --password <app-specific-password>
 #     Any working profile for the same team will do (FREETUBE_NOTARY_PROFILE=<name>).
-#   - For --upload: gh, signed in with access to this repository, and a clean working tree
-#     whose commit is pushed — the release tags that commit.
 #
 # Optional:
 #   BUILD_NUMBER=<n>   Override the build number (default: the project's CURRENT_PROJECT_VERSION)
@@ -51,11 +48,9 @@ step() { echo; echo "==> $*"; }
 
 VERSION=""
 NOTARIZE=true
-UPLOAD=false
 while (($#)); do
   case "$1" in
     --skip-notarize) NOTARIZE=false ;;
-    --upload) UPLOAD=true ;;
     -h | --help)
       sed -n '2,/^set -euo pipefail/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'
       exit 0
@@ -86,10 +81,6 @@ project_setting() {
 BUILD_NUMBER="${BUILD_NUMBER:-$(project_setting CURRENT_PROJECT_VERSION)}"
 [[ "$BUILD_NUMBER" =~ ^[0-9]+(\.[0-9]+)*$ ]] || die "not a build number: ${BUILD_NUMBER:-none}"
 
-if $UPLOAD && ! $NOTARIZE; then
-  die "--upload with --skip-notarize would publish a build Gatekeeper blocks; notarize it"
-fi
-
 # The keychain's one Developer ID Application identity, unless DEVELOPER_ID_APPLICATION names it.
 IDENTITIES="$(security find-identity -v -p codesigning)"
 if [[ -z "${DEVELOPER_ID_APPLICATION:-}" ]]; then
@@ -117,24 +108,11 @@ if $NOTARIZE; then
 or set FREETUBE_NOTARY_PROFILE to a working profile of the same team"
 fi
 
-TAG="v$VERSION"
-if $UPLOAD; then
-  command -v gh >/dev/null 2>&1 || die "--upload needs gh"
-  gh auth status >/dev/null 2>&1 || die "gh is not signed in (gh auth login)"
-  [[ -z "$(git status --porcelain)" ]] || die "--upload needs a clean working tree: the build must be the tagged commit"
-  COMMIT="$(git rev-parse HEAD)"
-  [[ -n "$(git branch -r --contains "$COMMIT" 2>/dev/null)" ]] || die "push $COMMIT first: the release tags it"
-  REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
-  if IS_DRAFT="$(gh release view "$TAG" --repo "$REPO" --json isDraft -q .isDraft 2>/dev/null)"; then
-    [[ "$IS_DRAFT" == true ]] || die "release $TAG of $REPO is already published; pick a new version"
-  fi
-fi
 
 step "release"
 echo "    version:  $VERSION ($BUILD_NUMBER)"
 echo "    identity: $DEVELOPER_ID_APPLICATION"
 $NOTARIZE && echo "    notary:   $NOTARY_PROFILE" || echo "    notary:   skipped"
-$UPLOAD && echo "    upload:   draft $TAG of $REPO"
 
 WORK_DIR="$(mktemp -d -t freetube-release)"
 trap 'rm -rf "$WORK_DIR"' EXIT
@@ -185,7 +163,9 @@ APP_BUNDLE="$EXPORT_DIR/FreeTube.app"
 
 step "verifying"
 EXECUTABLE="$APP_BUNDLE/Contents/MacOS/FreeTube"
-xcrun lipo "$EXECUTABLE" -verify_arch arm64 x86_64 || die "not universal (arm64 + x86_64): $EXECUTABLE"
+for arch in arm64 x86_64; do
+  xcrun lipo "$EXECUTABLE" -verify_arch "$arch" || die "not universal (no $arch): $EXECUTABLE"
+done
 codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
 SIGNATURE="$(codesign -dv --verbose=4 "$APP_BUNDLE" 2>&1)"
 printf '%s\n' "$SIGNATURE" | grep -qF "Authority=Developer ID Application" || die "not signed with Developer ID"
@@ -263,19 +243,6 @@ if $NOTARIZE; then
   step "Gatekeeper assessment"
   spctl --assess --type execute --verbose=4 "$APP_BUNDLE"
   spctl --assess --type open --context context:primary-signature --verbose=4 "$DMG"
-fi
-
-# ------------------------------------------------------------------ upload
-
-if $UPLOAD; then
-  step "uploading to the draft release $TAG"
-  if ! gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
-    gh release create "$TAG" --repo "$REPO" --draft --target "$COMMIT" \
-      --title "FreeTube $VERSION" --generate-notes >/dev/null
-  fi
-  gh release upload "$TAG" --repo "$REPO" --clobber "$DMG"
-  echo "    draft: $(gh release view "$TAG" --repo "$REPO" --json url -q .url)"
-  echo "    publish it on GitHub once the notes read right"
 fi
 
 echo
