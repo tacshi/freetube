@@ -8,7 +8,9 @@
 #
 # What it does: archives the iOS app (Release), exports it for App Store Connect with automatic
 # signing, checks the IPA's version, build number and export-compliance flag, then uploads it
-# with `asc publish testflight`, waits for processing and adds it to the tester group.
+# with `asc publish testflight`, waits for processing and adds it to the tester group. Last, it
+# attaches the build to the App Store version, which is where App Store Connect's Apps page
+# takes the app's icon from.
 #
 # Requires:
 #   - asc (App Store Connect CLI), authenticated: `asc auth doctor` must pass.
@@ -156,5 +158,36 @@ asc publish testflight \
   --wait \
   --timeout "$TIMEOUT" \
   --output table
+
+# ------------------------------------------------------- App Store version
+
+# App Store Connect's Apps page shows each app with the icon of the build attached to its App
+# Store version — not of the latest TestFlight build. With nothing attached (a new app's "1.0",
+# or a version that no build matches) the tile stays a blank placeholder, as Listenook's did.
+# So point the version in Prepare for Submission at this build: renamed to $VERSION, or
+# created when there is none. Attaching submits nothing for review. TestFlight already has
+# the build, so a failure here only warns.
+step "attaching $VERSION ($BUILD_NUMBER) to the App Store version"
+warn() { printf 'warning: %s\n' "$*" >&2; }
+EDITABLE="$(asc versions list --app "$APP_ID" --platform IOS --state PREPARE_FOR_SUBMISSION --output json |
+  /usr/bin/python3 -c 'import json,sys; d=json.load(sys.stdin); d=d.get("data",d) if isinstance(d,dict) else d; print(d[0]["id"] + " " + d[0]["attributes"]["versionString"] if d else "")')" || EDITABLE=""
+EDITABLE_ID="${EDITABLE%% *}"
+EDITABLE_VERSION="${EDITABLE#* }"
+VERSION_READY=true
+if [[ -z "$EDITABLE" ]]; then
+  asc versions create --app "$APP_ID" --version "$VERSION" --platform IOS >/dev/null ||
+    { warn "couldn't create App Store version $VERSION"; VERSION_READY=false; }
+elif [[ "$EDITABLE_VERSION" != "$VERSION" ]]; then
+  info "renaming App Store version $EDITABLE_VERSION to $VERSION"
+  asc versions update --version-id "$EDITABLE_ID" --version "$VERSION" >/dev/null ||
+    { warn "couldn't rename App Store version $EDITABLE_VERSION to $VERSION"; VERSION_READY=false; }
+fi
+if $VERSION_READY; then
+  asc versions attach-build --app "$APP_ID" --version "$VERSION" --platform IOS \
+    --build-number "$BUILD_NUMBER" --output table ||
+    warn "couldn't attach build $BUILD_NUMBER to App Store version $VERSION; the app's icon in App Store Connect stays blank until a build is attached"
+else
+  warn "the app's icon in App Store Connect stays blank until a build is attached to its App Store version"
+fi
 
 step "published $VERSION ($BUILD_NUMBER) to internal TestFlight"
