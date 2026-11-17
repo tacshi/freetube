@@ -1,8 +1,10 @@
+#if !targetEnvironment(macCatalyst)
 import Foundation
 
 import FFmpegSupport
 
-/// Serializes every call into the ffmpeg C library.
+/// Serializes every call into the ffmpeg C library. iOS only: the ffmpeg packages have no Mac
+/// Catalyst build, so the Mac joins downloads with `AVFoundationMuxer` instead.
 ///
 /// **Why this is necessary:** `FFmpegSupport.ffmpeg(_:)` is an entry point into a C library with
 /// shared global state — most painfully the `+faststart` post-pass (which moves the moov atom to
@@ -35,3 +37,4 @@ actor FFmpegRunner {
         return await task.value
     }
 }
+#endif

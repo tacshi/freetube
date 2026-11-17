@@ -17,7 +17,12 @@ nonisolated final class YouTubeKitClient: @unchecked Sendable {
 
     private let log = AppLog(subsystem: "com.leshko.freetube", category: "YouTubeKitClient")
 
-    private init() {}
+    private init() {
+        // YouTubeKit's default (the first preferred language, verbatim) can name a region or a
+        // tag shape YouTube rejects with HTTP 400 — see `YouTubeLocale`.
+        model.selectedLocale = YouTubeLocale.tag()
+        log.info("locale \(self.model.selectedLocale, privacy: .public)")
+    }
 
     /// Visitor token YouTube issued to this install (empty until `ensureVisitorData()` ran).
     /// `StreamService` sends it as `X-Goog-Visitor-Id`; without one YouTube answers stream

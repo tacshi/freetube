@@ -246,7 +246,20 @@ final class DownloadManager {
     /// can read from a local file, so `AVAssetExportSession` isn't an option. `aac_adtstoasc`
     /// rewrites the audio headers into the form MP4 requires (it passes other audio through);
     /// `+faststart` puts the index at the front so other apps can start playing immediately.
+    ///
+    /// On Mac Catalyst, where ffmpeg isn't available, `AVFoundationMuxer` does the same join.
     private func mux(video: URL, audio: URL?, to output: URL) async throws {
+        #if targetEnvironment(macCatalyst)
+        do {
+            // Detached: the muxer blocks on file reads (CLAUDE.md §15.12).
+            try await Task.detached(priority: .utility) {
+                try await AVFoundationMuxer.mux(video: video, audio: audio, to: output)
+            }.value
+        } catch {
+            log.error("mux failed: \(error.localizedDescription, privacy: .public)")
+            throw DownloadError.conversionFailed
+        }
+        #else
         var args = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "warning", "-i", video.path]
         if let audio {
             args += ["-i", audio.path, "-map", "0:v:0", "-map", "1:a:0"]
@@ -257,6 +270,7 @@ final class DownloadManager {
         guard exitCode == 0, FileManager.default.fileExists(atPath: output.path) else {
             throw DownloadError.conversionFailed
         }
+        #endif
     }
 
     // MARK: - Files

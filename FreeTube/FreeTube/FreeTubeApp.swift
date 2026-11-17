@@ -29,10 +29,10 @@ struct FreeTubeApp: App {
                 .onChange(of: appearanceModeRaw, initial: true) { _, raw in
                     applyAppearance(AppearanceMode(rawValue: raw) ?? .system)
                 }
+                .onAppear { MacIntegration.restrictWindowSizes() }
         }
-        // Menu-bar items + keyboard shortcuts. Only meaningful on Mac (via "Designed for
-        // iPad on Mac" — Catalyst would also pick them up if we ever enable it), but
-        // harmless to register everywhere — iPhone shows no menu bar, iPad-with-keyboard
+        // Menu-bar items + keyboard shortcuts. Only meaningful on the Mac (Catalyst build),
+        // but harmless to register everywhere — iPhone shows no menu bar, iPad-with-keyboard
         // picks up the shortcuts which is a fine bonus. See `MacCommands`.
         .commands {
             MacCommands(player: appEnvironment.playerStateManager)

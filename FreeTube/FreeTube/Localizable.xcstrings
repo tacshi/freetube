@@ -103,6 +103,40 @@
         }
       }
     },
+    "%@ used." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ belegt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ used."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ en uso."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ utilisés."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Занято %@."
+          }
+        }
+      }
+    },
     "%@ used. Also in the Files app, in the FreeTube folder." : {
       "localizations" : {
         "de" : {
@@ -2060,6 +2094,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Скачано"
+          }
+        }
+      }
+    },
+    "Downloaded videos are saved as MP4 files. Choose Show in Finder on a download to find its file." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geladene Videos werden als MP4-Dateien gesichert. Wähle bei einem Download „Im Finder zeigen“, um die Datei zu finden."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Downloaded videos are saved as MP4 files. Choose Show in Finder on a download to find its file."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los vídeos descargados se guardan como archivos MP4. Elige Mostrar en el Finder en una descarga para encontrar su archivo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les vidéos téléchargées sont enregistrées en fichiers MP4. Choisissez Afficher dans le Finder sur un téléchargement pour trouver son fichier."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Скачанные видео сохраняются как файлы MP4. Чтобы найти файл, выберите «Показать в Finder» у загрузки."
           }
         }
       }
@@ -4094,6 +4162,40 @@
         }
       }
     },
+    "Passkeys don't work here. If Google asks for one, choose “Try another way” and use your password or your phone." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passkeys funktionieren hier nicht. Wenn Google danach fragt, wähle „Andere Option wählen“ und nutze dein Passwort oder dein Telefon."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passkeys don't work here. If Google asks for one, choose “Try another way” and use your password or your phone."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las llaves de acceso no funcionan aquí. Si Google te pide una, elige «Probar otra manera» y usa tu contraseña o tu teléfono."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les clés d’accès ne fonctionnent pas ici. Si Google vous en demande une, choisissez « Essayer une autre méthode » et utilisez votre mot de passe ou votre téléphone."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ключи доступа здесь не работают. Если Google попросит ключ, выберите «Другой способ» и используйте пароль или телефон."
+          }
+        }
+      }
+    },
     "Pause" : {
       "localizations" : {
         "de" : {
@@ -4610,6 +4712,40 @@
         }
       }
     },
+    "Press ⌘R or sign in to see your home feed." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drücke ⌘R oder melde dich an, um deinen Startfeed zu sehen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Press ⌘R or sign in to see your home feed."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pulsa ⌘R o inicia sesión para ver tu inicio."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appuyez sur ⌘R ou connectez-vous pour voir votre fil d’accueil."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нажмите ⌘R или войдите, чтобы увидеть свою ленту."
+          }
+        }
+      }
+    },
     "Previous" : {
       "localizations" : {
         "de" : {
@@ -4916,6 +5052,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Недавно просмотренные"
+          }
+        }
+      }
+    },
+    "Refresh" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aktualisieren"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refresh"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actualizar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actualiser"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Обновить"
           }
         }
       }

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Mac Catalyst only (CODE_SIGN_ENTITLEMENTS[sdk=macosx*]). The sandbox gives the app its
+	     own container, so Documents — where downloads live and which DownloadsStore scans — is
+	     the app's, not the user's ~/Documents. -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<!-- Save panels from the share sheet ("Save to Files") and drag-out of downloads. -->
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+	<!-- The sign-in cookies live in the Keychain (KeychainHelper, CLAUDE.md §9). A Catalyst app
+	     uses the data-protection keychain, which refuses writes (-34018) unless the app has an
+	     application identifier — and macOS grants one only through a provisioning profile.
+	     Declaring the app's own access group makes Xcode's signing embed that profile (a
+	     Developer ID profile in scripts/build-mac-release.sh). Without a profile this
+	     entitlement stops the app from launching, so never sign the Mac build by hand. -->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)com.leshko.freetube</string>
+	</array>
+</dict>
+</plist>

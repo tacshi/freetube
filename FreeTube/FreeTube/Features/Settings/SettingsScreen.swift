@@ -47,11 +47,18 @@ struct SettingsScreen: View {
                             Text(verbatim: quality.rawValue).tag(quality)
                         }
                     }
-                    Toggle("Download over cellular", isOn: Bindable(model).allowCellularDownloads)
+                    // Macs have no cellular connection for the setting to govern.
+                    if !MacIntegration.isRunningOnMac {
+                        Toggle("Download over cellular", isOn: Bindable(model).allowCellularDownloads)
+                    }
                 } header: {
                     Text("Downloads")
                 } footer: {
-                    Text("Downloaded videos are saved as MP4 files. They also appear in the Files app, in the FreeTube folder.")
+                    if MacIntegration.isRunningOnMac {
+                        Text("Downloaded videos are saved as MP4 files. Choose Show in Finder on a download to find its file.")
+                    } else {
+                        Text("Downloaded videos are saved as MP4 files. They also appear in the Files app, in the FreeTube folder.")
+                    }
                 }
 
                 Section {

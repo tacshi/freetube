@@ -53,6 +53,13 @@ struct HomeScreen: View {
         MacIntegration.isRunningOnMac || horizontalSizeClass == .compact
     }
 
+    /// The Mac has no pull-to-refresh; there ⌘R (Navigate → Refresh) reloads.
+    private var emptyFeedMessage: String {
+        MacIntegration.isRunningOnMac
+            ? String(localized: "Press ⌘R or sign in to see your home feed.")
+            : String(localized: "Pull to refresh or sign in to see your home feed.")
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -108,6 +115,16 @@ struct HomeScreen: View {
             .task {
                 if model.sections.isEmpty { await model.load() }
             }
+            // Navigate → Refresh (⌘R) in `MacCommands`: the Mac's stand-in for pull-to-refresh.
+            .onReceive(NotificationCenter.default.publisher(for: .freetubeRefresh)) { _ in
+                Task {
+                    if isSearchActive {
+                        await searchModel.submit()
+                    } else {
+                        await model.refresh()
+                    }
+                }
+            }
             // Reload the home feed whenever the auth status flips. After sign-in the
             // YouTubeModel has cookies attached, so `HomeScreenResponse` returns the user's
             // personalized feed (subscriptions, watch history hints, etc.) instead of the
@@ -144,7 +161,7 @@ struct HomeScreen: View {
                 EmptyStateView(
                     systemImage: "play.rectangle.on.rectangle",
                     title: "Nothing here yet",
-                    message: "Pull to refresh or sign in to see your home feed."
+                    message: emptyFeedMessage
                 )
                 .listRowInsets(EdgeInsets())
                 .listRowSeparator(.hidden)
@@ -215,7 +232,7 @@ struct HomeScreen: View {
                     EmptyStateView(
                         systemImage: "play.rectangle.on.rectangle",
                         title: "Nothing here yet",
-                        message: "Pull to refresh or sign in to see your home feed."
+                        message: emptyFeedMessage
                     )
                 }
 

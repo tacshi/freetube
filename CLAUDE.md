@@ -8,9 +8,9 @@ This file gives Claude Code the context, constraints, and conventions it must fo
 
 **FreeTube iOS** — a native SwiftUI YouTube client that replicates the YouTube mobile app: home feed, search, playback, login, subscriptions, library, history, playlists, comments, likes. Tapping a video plays it immediately by streaming, like the YouTube app. Videos can also be **downloaded on request** as MP4 files, for offline playback and for export to other apps (§10).
 
-**Distribution:** TestFlight internal, sideload, or personal use. **Not for public App Store submission.** Do not suggest changes that assume App Store distribution.
+**Distribution:** iOS — TestFlight internal, sideload, or personal use. macOS — GitHub releases: a Developer ID signed, notarized DMG built by `scripts/build-mac-release.sh` (§15.13). **Not for public App Store submission** (iOS or Mac). Do not suggest changes that assume App Store distribution.
 
-**Platforms:** iOS 17.0+, Swift 5.9+, Xcode 15+.
+**Platforms:** iOS 17.0+, and macOS 14+ as a Mac Catalyst build ("Optimize interface for Mac", §15.13). Swift 5.9+, Xcode 15+.
 
 **Bundle identifier:** `com.leshko.freetube`. This is also the reverse-DNS namespace for the `os.Logger` subsystem, the Keychain cookie key (`com.leshko.freetube.cookies`), the `UserDefaults` keys (subscriptions / preferences), and internal `Notification.Name`s. Keep all of them on this same domain. Changing the identifier invalidates provisioning profiles and resets Keychain / `UserDefaults` state for any prior install.
 
@@ -45,7 +45,7 @@ These come first. Violating them breaks the project.
 | Playback | `AVFoundation` / `AVKit` (`AVQueuePlayer`, `AVPlayerLayer`, `AVPictureInPictureController`, `AVRoutePickerView`) — custom controls, no `AVPlayerViewController` |
 | Login web view | `WebKit` (`WKWebView`, `WKHTTPCookieStore` against ephemeral `.nonPersistent()` data store) |
 | Images | `Kingfisher` |
-| Downloads | `URLSession` (HLS segments) + `kewlbear/FFmpeg-iOS-Lame` and `kewlbear/FFmpeg-iOS-Support` (ffmpeg, used only to repackage a downloaded stream into MP4 — never for playback) |
+| Downloads | `URLSession` (HLS segments) + `kewlbear/FFmpeg-iOS-Lame` and `kewlbear/FFmpeg-iOS-Support` (ffmpeg, used only to repackage a downloaded stream into MP4 — never for playback; iOS only — the Mac build repackages with AVFoundation / AudioToolbox, `AVFoundationMuxer`) |
 | Secure storage | `Security` (raw Keychain via `KeychainHelper`) |
 | Persistence | `SwiftData` (`@Model`); `UserDefaults` for simple flags via `UserPreferences` |
 | Logging | `os.Logger` with subsystem `com.leshko.freetube` |
@@ -69,7 +69,8 @@ FreeTube/
 │   ├── Player/            # PlayerStateManager, QueueManager, PictureInPictureModel,
 │   │                      # AudioSessionConfigurator, NowPlayingCenter,
 │   │                      # RemoteCommandCenter, WatchProgressReporter, YouTubeResumeCache
-│   ├── Download/          # DownloadManager, DownloadJob, DownloadProgress, DownloadError, FFmpegRunner
+│   ├── Download/          # DownloadManager, DownloadJob, DownloadProgress, DownloadError,
+│   │                      # FFmpegRunner (iOS), AVFoundationMuxer (Mac)
 │   ├── Persistence/       # @Model types, PersistenceController, PersistenceWriter,
 │   │                      # DownloadsStore, DownloadEntry, DownloadMetadata, FileXattr
 │   └── Models/            # Domain types: Video, Channel, Playlist, Comment,
@@ -212,7 +213,7 @@ Downloads are **explicit**: the user taps Download (the player's action row afte
 
 1. Resolve the same HLS stream the player uses (`StreamService`, `VISIONOS` client).
 2. `HLSDownloadService` reads the master playlist, picks the best **H.264** variant within Settings → Download quality (360p–1080p, default 720p), and fetches its video and audio segments (6 at a time, each retried) into two temporary files. YouTube's segments are MPEG-TS video and ADTS AAC audio.
-3. `FFmpegRunner` joins them with `ffmpeg -c copy -bsf:a aac_adtstoasc -movflags +faststart` — a repackaging, not a re-encode. ffmpeg is required: AVFoundation can't read TS / ADTS from local files.
+3. `FFmpegRunner` joins them with `ffmpeg -c copy -bsf:a aac_adtstoasc -movflags +faststart` — a repackaging, not a re-encode. ffmpeg is required on iOS: iOS's AVFoundation can't read TS / ADTS from local files. **On the Mac** (no ffmpeg build for Catalyst), macOS's AVFoundation can, and `AVFoundationMuxer` does the same join: AudioToolbox rewraps the ADTS audio into M4A (AVFoundation underestimates an ADTS file's length and would cut its end off), then an `AVAssetExportSession` passthrough writes the MP4. Checked frame-for-frame against ffmpeg's output on real YouTube segments.
 4. The MP4 lands in the **Documents root** as `<title> [<videoID>].mp4`, and `DownloadsStore` writes its metadata (`DownloadMetadata`: video ID, title, channel, thumbnail JPEG, duration) as an extended attribute on the file.
 
 **Storage is the file system — no SwiftData model.** `DownloadsStore` scans Documents (on launch, after changes, on return to foreground) and publishes `entries` / `filesByVideoID`. Documents is visible in the Files app, so files the user removes or adds there are simply reflected. Never store a stream URL in the metadata (§2.6).
@@ -336,6 +337,20 @@ Symptom: blocking or long-running synchronous work lands on Thread 1 (main) and 
 - Use `Task.detached(priority: .utility) { ... }` to dispatch, never plain `Task { }`. `.detached` is the explicit "do NOT inherit isolation" form.
 - Mark such top-level functions `nonisolated`, and enclosing enums / structs `nonisolated` so their static members aren't pulled to main either (`YouTubeKitClient` is `nonisolated` for this reason).
 
+### 15.13 The Mac build is Mac Catalyst
+
+`SUPPORTS_MACCATALYST = YES` with the Mac idiom (`TARGETED_DEVICE_FAMILY = 1,2,6`), same bundle ID (`DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO`). What differs from iOS, and why:
+
+- **ffmpeg is iOS only.** The `kewlbear` xcframeworks have no Catalyst slice, so both ffmpeg package products carry `platformFilter = ios` and `FFmpegRunner` is `#if !targetEnvironment(macCatalyst)`. Downloads join with `AVFoundationMuxer` instead (§10). Don't add a second ffmpeg for the Mac.
+- **App Sandbox on** (`FreeTube/FreeTube.entitlements`, Mac only via `CODE_SIGN_ENTITLEMENTS[sdk=macosx*]`). Not for the App Store: without it `Documents` is the user's real `~/Documents`, which `DownloadsStore` would scan as the downloads folder.
+- **Keychain needs a provisioning profile.** A Catalyst app uses the data-protection keychain; without an application identifier, writes fail with -34018 (reads just miss, so sign-in *looks* fine until relaunch). The entitlements declare `keychain-access-groups` = `$(AppIdentifierPrefix)com.leshko.freetube`, so Xcode's signing embeds a profile — a development profile locally (the Mac must be registered in the developer account), a Developer ID profile in the release export. Never re-sign the Mac app by hand with `codesign`: without the profile that entitlement stops the app from launching. `KeychainHelper` logs any status other than success / not-found.
+- **Release:** `scripts/build-mac-release.sh [version] [--upload]` — universal archive, `-exportArchive` with method `developer-id`, notarize + staple the app and the DMG (keychain profile `FreeTube`, override with `FREETUBE_NOTARY_PROFILE`), optional upload to a draft GitHub release. Modeled on 115Lab's `build-mac-release.sh`.
+- **Mac UI:** `MacCommands` (menu bar: ⌘, settings, Navigate ⌘1–3 / ⌘F / ⌘R refresh, Playback). `MacIntegration` gates Mac-only behavior (Show in Finder, minimum window size 760×560, no cellular toggle, Finder wording instead of the Files app). Catalyst windows always report a regular size class.
+
+### 15.14 `YouTubeLocale`: YouTube rejects unknown `gl` / `hl`
+
+YouTubeKit's default locale is `Locale.preferredLanguages[0]` verbatim. YouTube answers `account/account_menu` with HTTP 400 when `gl` is a region it doesn't serve (`en-CN` → `CN`) or malformed (`zh-Hans-CN` → `HANS-CN`), and the Library then reads the 400 as signed out. `YouTubeKitClient` sets `model.selectedLocale = YouTubeLocale.tag()`: the preferred language and the system region, each kept only if YouTube accepts it (else `en` / `US`). The accepted lists came from probing every ISO code with `curl` (2026-11).
+
 ---
 
 ## 16. Build priority (work top-down)
@@ -366,6 +381,7 @@ Current state of the implementation. Items marked ✓ are shipped.
   - iPad layout: readable-width columns + tile grid for Home and search ✓
   - Custom video controls (YouTube-style overlay, PiP, AirPlay, full screen, speed / subtitles / audio menu) ✓
   - Downloads to MP4 with offline playback and export to other apps (§10) ✓
+  - Mac Catalyst build, released as a notarized DMG on GitHub (§15.13) ✓
 
 ---
 

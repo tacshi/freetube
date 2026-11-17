@@ -34,7 +34,11 @@ struct DownloadsScreen: View {
                             savedRow(entry)
                         }
                     } footer: {
-                        Text("\(totalSize) used. Also in the Files app, in the FreeTube folder.")
+                        if MacIntegration.isRunningOnMac {
+                            Text("\(totalSize) used.")
+                        } else {
+                            Text("\(totalSize) used. Also in the Files app, in the FreeTube folder.")
+                        }
                     }
                 }
             }

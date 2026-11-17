@@ -210,8 +210,8 @@ struct SearchContent: View {
     }
 }
 
-/// Inline search field used in place of `.searchable` on Mac (Designed-for-iPad-on-Mac or real
-/// Catalyst) and on compact-width iPhone. On Mac `.searchable` collapses to a trailing toolbar
+/// Inline search field used in place of `.searchable` on Mac (the Catalyst build) and on
+/// compact-width iPhone. On Mac `.searchable` collapses to a trailing toolbar
 /// button — awkward at desktop widths; on iPhone it sits in a drawer under an empty navigation
 /// bar, wasting a bar's height. The host view embeds this above its content and skips
 /// `.searchable` via `ConditionalSearchable`.

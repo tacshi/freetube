@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import Security
 
 /// Tiny `Security`-framework Keychain wrapper. Used until/unless the project adopts `KeychainAccess`
@@ -6,6 +7,7 @@ import Security
 /// methods to call into `Keychain(service:)`. The call sites in this app do not change.
 enum KeychainHelper {
     static let service = "com.leshko.freetube"
+    private static let log = AppLog(subsystem: "com.leshko.freetube", category: "KeychainHelper")
 
     static func set(_ data: Data, for key: String) throws {
         var query: [String: Any] = [
@@ -17,7 +19,10 @@ enum KeychainHelper {
         query[kSecValueData as String] = data
         query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         let status = SecItemAdd(query as CFDictionary, nil)
-        guard status == errSecSuccess else { throw KeychainError.osStatus(status) }
+        guard status == errSecSuccess else {
+            log.error("write failed for \(key, privacy: .public): OSStatus \(status, privacy: .public)")
+            throw KeychainError.osStatus(status)
+        }
     }
 
     static func set(_ string: String, for key: String) throws {
@@ -35,6 +40,11 @@ enum KeychainHelper {
         ]
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
+        // Not found is the normal signed-out state. Anything else (e.g. -34018, a missing
+        // keychain entitlement on a mis-signed Mac build) would otherwise look the same.
+        if status != errSecSuccess && status != errSecItemNotFound {
+            log.error("read failed for \(key, privacy: .public): OSStatus \(status, privacy: .public)")
+        }
         guard status == errSecSuccess, let data = result as? Data else { return nil }
         return data
     }
